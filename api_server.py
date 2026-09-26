@@ -1,9 +1,12 @@
 """
 FastAPI Server for Blood Pressure Tracker & SMART-BP Inference Engine.
 Production-hardened configuration for Render Docker deployment and local development.
+Supports single-image and sequential batch digitization with EXIF metadata extraction,
+SHA-256 duplicate detection, time-series chart data API, and personal access authentication.
 """
 
 import os
+import gc
 import sys
 import base64
 import logging
@@ -23,6 +26,7 @@ if PROJECT_ROOT not in sys.path:
 
 from smart_bp_inference import get_inference_engine, DEFAULT_WEIGHTS
 import database
+import exif_utils
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("bp_api")
@@ -90,7 +94,7 @@ def verify_access(
 app = FastAPI(
     title="Blood Pressure Tracker & SMART-BP Digitization API",
     description="Automated digital blood pressure monitor digitization using YOLOv8 SMART-BP.",
-    version="1.3.0"
+    version="1.4.0"
 )
 
 
@@ -107,7 +111,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 
 # Configurable CORS for production deployment
-# Restricts allowed origins to prevent unauthorized browser cross-origin requests
 cors_env = os.environ.get("CORS_ORIGINS", "").strip()
 if cors_env:
     allowed_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
@@ -126,13 +129,15 @@ has_wildcard = "*" in allowed_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=not has_wildcard,  # Spec forbids credentials with wildcard origin
+    allow_credentials=not has_wildcard,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# Maximum image upload size (default 20MB)
+# Upload limits tailored for Render Free Tier (512 MB RAM)
 MAX_UPLOAD_SIZE = int(os.environ.get("MAX_UPLOAD_SIZE_MB", 20)) * 1024 * 1024
+MAX_BATCH_IMAGES = int(os.environ.get("MAX_BATCH_IMAGES", 25))
+MAX_BATCH_SIZE_BYTES = int(os.environ.get("MAX_BATCH_SIZE_MB", 100)) * 1024 * 1024
 
 
 # ============================================================================
@@ -150,6 +155,29 @@ class ConfirmReadingRequest(BaseModel):
     original_pulse: Optional[int] = None
     notes: Optional[str] = ""
     timestamp: Optional[str] = None
+    image_hash: Optional[str] = None
+    image_filename: Optional[str] = None
+    capture_date_source: Optional[str] = None
+
+
+class BatchConfirmItem(BaseModel):
+    sys: int = Field(..., ge=40, le=260)
+    dia: int = Field(..., ge=30, le=200)
+    pulse: Optional[int] = Field(None, ge=25, le=240)
+    timestamp: Optional[str] = Field(None, description="Capture date/time in YYYY-MM-DD HH:MM:SS format. Required before saving.")
+    model_variant: str = "SMART-BP+"
+    confidence: Optional[float] = None
+    original_sys: Optional[int] = None
+    original_dia: Optional[int] = None
+    original_pulse: Optional[int] = None
+    notes: Optional[str] = ""
+    image_hash: Optional[str] = None
+    image_filename: Optional[str] = None
+    capture_date_source: Optional[str] = None
+
+
+class BatchConfirmRequest(BaseModel):
+    items: List[BatchConfirmItem]
 
 
 class Base64ImageRequest(BaseModel):
@@ -235,7 +263,7 @@ def auth_status_endpoint(
 
 
 # ============================================================================
-# Protected Inference & Reading Endpoints
+# Single-Image Inference Endpoints
 # ============================================================================
 
 @app.post("/api/read-bp-image")
@@ -246,10 +274,9 @@ async def read_bp_image_endpoint(
     _token: str = Depends(verify_access)
 ):
     """
-    Inference endpoint: Upload a BP monitor photograph.
-    Runs SMART-BP model inference and returns the extracted readings.
-    Requires authentication to protect compute resources and prevent unauthorized image processing.
-    NOTE: Readings are NOT automatically saved; user confirmation is required!
+    Single-image inference endpoint. Upload a BP monitor photograph.
+    Runs EXIF extraction, checks duplicate status, and executes SMART-BP inference.
+    Readings are NOT automatically saved; user confirmation is required!
     """
     if image is None:
         raise HTTPException(status_code=400, detail="No image file provided.")
@@ -265,6 +292,10 @@ async def read_bp_image_endpoint(
         if len(image_bytes) > MAX_UPLOAD_SIZE:
             raise HTTPException(status_code=413, detail=f"File exceeds maximum upload limit of {MAX_UPLOAD_SIZE // (1024*1024)}MB.")
 
+        # Extract metadata prior to inference
+        metadata = exif_utils.extract_exif_metadata(image_bytes)
+        duplicate_record = database.check_duplicate_image(metadata["image_hash"])
+
         engine = get_inference_engine(variant=variant)
         result = engine.predict(
             image_input=image_bytes,
@@ -275,6 +306,10 @@ async def read_bp_image_endpoint(
         sys_val = result["readings"].get("sys")
         dia_val = result["readings"].get("dia")
         result["category"] = database.calculate_category(sys_val, dia_val)
+        result["metadata"] = metadata
+        result["is_duplicate"] = duplicate_record is not None
+        result["duplicate_info"] = duplicate_record
+        result["filename"] = image.filename or "monitor_photo.jpg"
 
         return JSONResponse(content=result)
 
@@ -297,10 +332,7 @@ def read_bp_image_base64_endpoint(
     req: Base64ImageRequest,
     _token: str = Depends(verify_access)
 ):
-    """
-    Inference endpoint accepting base64 encoded data URI (for live mobile camera frames).
-    Requires authentication.
-    """
+    """Inference endpoint accepting base64 encoded data URI (for live mobile camera frames)."""
     try:
         raw_b64 = req.image_base64
         if "," in raw_b64:
@@ -331,6 +363,214 @@ def read_bp_image_base64_endpoint(
         )
 
 
+# ============================================================================
+# Batch Inference & Processing Endpoints (Sequential CPU execution)
+# ============================================================================
+
+@app.post("/api/batch-process")
+async def batch_process_endpoint(
+    images: List[UploadFile] = File(...),
+    variant: str = Form("SMART-BP+"),
+    conf_threshold: float = Form(0.2),
+    _token: str = Depends(verify_access)
+):
+    """
+    Sequential Batch Inference Endpoint.
+    Extracts original photo capture dates (DateTimeOriginal, DateTimeDigitized, DateTime)
+    from image EXIF metadata, checks for duplicates via SHA-256 hash, and runs SMART-BP
+    inference one-by-one to preserve memory on Render Free instances (512 MB RAM).
+    """
+    if not images:
+        raise HTTPException(status_code=400, detail="No images provided in batch upload.")
+
+    if len(images) > MAX_BATCH_IMAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch size limit of {MAX_BATCH_IMAGES} images exceeded. Please upload in smaller batches."
+        )
+
+    # Load inference engine once for entire batch
+    engine = get_inference_engine(variant=variant)
+
+    results = []
+    total_batch_bytes = 0
+
+    count_success = 0
+    count_unreadable = 0
+    count_duplicates = 0
+    count_missing_dates = 0
+
+    for idx, img_file in enumerate(images):
+        filename = img_file.filename or f"image_{idx+1}.jpg"
+        try:
+            image_bytes = await img_file.read()
+            if not image_bytes:
+                results.append({
+                    "batch_index": idx,
+                    "filename": filename,
+                    "status": "error",
+                    "error_message": "Empty file received.",
+                    "readings": {"sys": None, "dia": None, "pul": None},
+                    "category": "Unknown",
+                    "confidence": {},
+                    "metadata": {"has_capture_date": False, "display_datetime": "Capture date unavailable", "image_hash": None},
+                    "thumbnail_base64": None
+                })
+                count_unreadable += 1
+                continue
+
+            total_batch_bytes += len(image_bytes)
+            if total_batch_bytes > MAX_BATCH_SIZE_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Total batch size exceeded {MAX_BATCH_SIZE_BYTES // (1024*1024)}MB limit."
+                )
+
+            # 1. Extract EXIF metadata BEFORE any image transformations
+            metadata = exif_utils.extract_exif_metadata(image_bytes)
+            if not metadata["has_capture_date"]:
+                count_missing_dates += 1
+
+            # 2. Check for duplicate image upload via SHA-256 hash
+            img_hash = metadata["image_hash"]
+            duplicate_record = database.check_duplicate_image(img_hash)
+            is_dup = duplicate_record is not None
+            if is_dup:
+                count_duplicates += 1
+
+            # 3. Create lightweight thumbnail (~1KB)
+            thumb_b64 = exif_utils.create_thumbnail_base64(image_bytes)
+
+            # 4. Sequential inference on CPU
+            infer_result = engine.predict(
+                image_input=image_bytes,
+                conf_threshold=conf_threshold,
+                generate_annotated_image=False  # Do not build large annotated image for batch to save RAM
+            )
+
+            readings = infer_result.get("readings", {})
+            conf_info = infer_result.get("confidence", {})
+            has_valid_bp = readings.get("sys") is not None and readings.get("dia") is not None
+
+            if is_dup:
+                status = "duplicate"
+                if has_valid_bp:
+                    count_success += 1
+                else:
+                    count_unreadable += 1
+            elif has_valid_bp:
+                count_success += 1
+                if not metadata["has_capture_date"]:
+                    status = "success_date_missing"
+                else:
+                    status = "success"
+            else:
+                count_unreadable += 1
+                status = "unreadable"
+
+            sys_val = readings.get("sys")
+            dia_val = readings.get("dia")
+            category = database.calculate_category(sys_val, dia_val)
+
+            results.append({
+                "batch_index": idx,
+                "filename": filename,
+                "status": status,
+                "is_duplicate": is_dup,
+                "duplicate_info": duplicate_record,
+                "readings": readings,
+                "confidence": conf_info,
+                "category": category,
+                "metadata": metadata,
+                "thumbnail_base64": thumb_b64,
+                "message": infer_result.get("message", "")
+            })
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error processing batch item {filename}")
+            results.append({
+                "batch_index": idx,
+                "filename": filename,
+                "status": "error",
+                "error_message": str(e),
+                "readings": {"sys": None, "dia": None, "pul": None},
+                "category": "Unknown",
+                "confidence": {},
+                "metadata": {"has_capture_date": False, "display_datetime": "Capture date unavailable", "image_hash": None},
+                "thumbnail_base64": None
+            })
+            count_unreadable += 1
+        finally:
+            # Explicit garbage collection after each image to stay inside 512MB RAM
+            gc.collect()
+
+    return {
+        "status": "success",
+        "total_processed": len(images),
+        "summary": {
+            "total_uploaded": len(images),
+            "successful_readings": count_success,
+            "unreadable_or_failed": count_unreadable,
+            "duplicates_detected": count_duplicates,
+            "missing_exif_dates": count_missing_dates
+        },
+        "items": results
+    }
+
+
+@app.post("/api/batch-confirm")
+def batch_confirm_endpoint(
+    req: BatchConfirmRequest,
+    _token: str = Depends(verify_access)
+):
+    """
+    Explicit batch confirmation endpoint.
+    Saves user-reviewed readings to the database with original capture timestamps.
+    Requires validated timestamps (from EXIF or user selection).
+    """
+    if not req.items:
+        raise HTTPException(status_code=400, detail="No readings provided to save.")
+
+    items_to_save = []
+    for item in req.items:
+        ts = (item.timestamp or "").strip()
+        if not ts:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Reading from '{item.image_filename or 'batch'}' is missing a capture date/time. Please select a date/time before saving."
+            )
+
+        items_to_save.append({
+            "sys": item.sys,
+            "dia": item.dia,
+            "pulse": item.pulse,
+            "timestamp": ts,
+            "model_variant": item.model_variant,
+            "confidence": item.confidence,
+            "original_sys": item.original_sys,
+            "original_dia": item.original_dia,
+            "original_pulse": item.original_pulse,
+            "notes": item.notes or "",
+            "image_hash": item.image_hash,
+            "image_filename": item.image_filename,
+            "capture_date_source": item.capture_date_source or "UserConfirmed"
+        })
+
+    saved = database.save_batch_readings(items_to_save)
+    return {
+        "status": "success",
+        "message": f"Successfully saved {len(saved)} verified blood pressure readings.",
+        "saved_count": len(saved),
+        "records": saved
+    }
+
+
+# ============================================================================
+# Confirmation & Database Endpoints
+# ============================================================================
+
 @app.post("/api/confirm-reading")
 def confirm_and_save_reading(
     req: ConfirmReadingRequest,
@@ -351,7 +591,10 @@ def confirm_and_save_reading(
             original_dia=req.original_dia,
             original_pulse=req.original_pulse,
             notes=req.notes or "",
-            custom_timestamp=req.timestamp
+            custom_timestamp=req.timestamp,
+            image_hash=req.image_hash,
+            image_filename=req.image_filename,
+            capture_date_source=req.capture_date_source
         )
         return {"status": "success", "message": "Reading saved successfully.", "reading": saved_record}
     except Exception as e:
@@ -361,12 +604,20 @@ def confirm_and_save_reading(
 
 @app.get("/api/history")
 def get_reading_history(
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(500, ge=1, le=1000),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    order: str = Query("DESC"),
     _token: str = Depends(verify_access)
 ):
-    """Retrieves blood pressure history. Requires authentication."""
+    """Retrieves blood pressure history with optional date filtering. Requires authentication."""
     try:
-        records = database.get_all_readings(limit=limit)
+        records = database.get_all_readings(
+            limit=limit,
+            start_date=start_date,
+            end_date=end_date,
+            order=order
+        )
         return {"status": "success", "count": len(records), "readings": records}
     except Exception as e:
         logger.exception("Failed to fetch history")
@@ -389,6 +640,24 @@ def delete_history_reading(
 def get_history_stats(_token: str = Depends(verify_access)):
     """Returns analytics and summary metrics. Requires authentication."""
     return database.get_stats()
+
+
+@app.get("/api/chart-data")
+def get_chart_data_endpoint(
+    period: Optional[str] = Query("all"),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    _token: str = Depends(verify_access)
+):
+    """
+    Returns chronologically sorted (ASC) readings and descriptive summary statistics
+    for rendering time-series charts across daily, weekly, monthly, or custom ranges.
+    """
+    return database.get_chart_data(
+        start_date=start_date,
+        end_date=end_date,
+        period=period
+    )
 
 
 @app.get("/api/sample-image")

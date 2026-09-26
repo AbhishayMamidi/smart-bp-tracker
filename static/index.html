@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
       --bg: #0b0f19;
@@ -673,6 +674,193 @@
       background: rgba(16, 185, 129, 0.1) !important;
       color: #34d399 !important;
     }
+
+    /* Batch Queue Styles */
+    .batch-queue-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+      max-height: 280px;
+      overflow-y: auto;
+      padding: 10px;
+      background: rgba(11, 15, 25, 0.6);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-sm);
+    }
+
+    .batch-item-card {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-sm);
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    .batch-item-thumb {
+      width: 100%;
+      height: 75px;
+      object-fit: cover;
+      border-radius: 4px;
+      background: #000;
+    }
+
+    .batch-item-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 100%;
+      margin-top: 4px;
+    }
+
+    .batch-item-size {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .batch-item-del {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      background: rgba(0, 0, 0, 0.75);
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .batch-item-del:hover {
+      background: var(--danger);
+    }
+
+    /* Batch Review Table Styles */
+    .batch-review-table th, .batch-review-table td {
+      vertical-align: middle;
+      padding: 10px 12px;
+    }
+
+    .batch-table-thumb {
+      width: 64px;
+      height: 52px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid var(--surface-border);
+      background: #000;
+      display: block;
+    }
+
+    .date-cell-input {
+      background: rgba(11, 15, 25, 0.8);
+      border: 1px solid var(--surface-border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 12px;
+      font-family: inherit;
+      width: 180px;
+    }
+
+    .date-cell-input:focus {
+      border-color: var(--primary);
+    }
+
+    .date-cell-input.missing-date {
+      border-color: var(--warning);
+      box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+    }
+
+    .table-num-input {
+      width: 70px;
+      text-align: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 6px 4px;
+      background: rgba(11, 15, 25, 0.8);
+      border: 1px solid var(--surface-border);
+      color: var(--text);
+      border-radius: 6px;
+    }
+
+    .table-num-input:focus {
+      border-color: var(--primary);
+    }
+
+    /* Chart & Analytics Styles */
+    .chart-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .pill-group {
+      display: flex;
+      gap: 4px;
+      background: rgba(11, 15, 25, 0.6);
+      padding: 4px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--surface-border);
+    }
+
+    .pill-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .pill-btn:hover {
+      color: var(--text);
+    }
+
+    .pill-btn.active {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 2px 6px rgba(59, 130, 246, 0.4);
+    }
+
+    .chart-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 12px;
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid var(--surface-border);
+    }
+
+    @media (max-width: 1024px) {
+      .chart-stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    @media (max-width: 600px) {
+      .chart-stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
   </style>
 </head>
 <body>
@@ -730,8 +918,9 @@
 
         <!-- Mode Tabs -->
         <div class="tab-header">
-          <button class="tab-btn active" id="tabUpload" onclick="switchTab('upload')">&#x1f4c1; Upload Image</button>
+          <button class="tab-btn active" id="tabUpload" onclick="switchTab('upload')">&#x1f4c1; Single Upload</button>
           <button class="tab-btn" id="tabCamera" onclick="switchTab('camera')">&#x1f4f8; Live Camera</button>
+          <button class="tab-btn" id="tabBatch" onclick="switchTab('batch')">&#x1f4c2; Multi-Photo Batch</button>
         </div>
 
         <!-- Upload View -->
@@ -761,6 +950,44 @@
           <div style="display: flex; gap: 8px;">
             <button class="btn btn-primary" style="flex: 2;" onclick="capturePhoto()">&#x1f4f7; Snap Photo</button>
             <button class="btn btn-secondary" style="flex: 1;" onclick="stopCamera()">Close Camera</button>
+          </div>
+        </div>
+
+        <!-- Multi-Photo Batch View -->
+        <div id="batchView" style="display: none;">
+          <div class="dropzone" id="batchDropzone" onclick="document.getElementById('batchFileInput').click()">
+            <div class="dropzone-icon">&#x21e7;</div>
+            <div class="dropzone-text">Click or drag multiple BP monitor photos here</div>
+            <div class="dropzone-subtext">Select multiple JPG, PNG, WEBP from desktop or phone gallery</div>
+            <input type="file" id="batchFileInput" multiple accept="image/*" style="display:none" onchange="handleBatchFileSelect(event)">
+          </div>
+
+          <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary" type="button" onclick="document.getElementById('batchFileInput').click()" style="font-size: 12px; padding: 8px 12px;">
+                <span>&#x2795;</span> Add More Photos
+              </button>
+              <button class="btn btn-secondary" type="button" onclick="clearBatchQueue()" style="font-size: 12px; padding: 8px 12px;">
+                Clear Queue
+              </button>
+            </div>
+            <div id="batchQueueStats" style="font-size: 12px; color: #93c5fd; font-weight: 600;">
+              0 photos selected (0 MB)
+            </div>
+          </div>
+
+          <!-- Queued Photos Preview Grid -->
+          <div id="batchQueueContainer" class="batch-queue-grid" style="display: none;"></div>
+
+          <div style="margin-top: 16px;">
+            <button class="btn btn-primary btn-block" id="batchScanBtn" onclick="runBatchInference()" disabled>
+              <span>&#x26a1;</span> Process Batch with SMART-BP
+            </button>
+          </div>
+
+          <div class="loader" id="batchLoader" style="display: none;">
+            <div class="spinner"></div>
+            <span id="batchLoaderText">Processing batch images sequentially on CPU...</span>
           </div>
         </div>
 
@@ -865,6 +1092,139 @@
       </div>
     </div>
 
+    <!-- Batch Review & Confirmation Card -->
+    <div class="card" id="batchReviewCard" style="display: none; margin-bottom: 32px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 12px;">
+        <div>
+          <div class="card-title"><span>&#x1f4cb;</span> Batch Review & Confirmation</div>
+          <div class="card-desc" style="margin-bottom: 0;">Review digitized values, extracted EXIF capture dates, and duplicates before saving.</div>
+        </div>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <button class="btn btn-success" onclick="confirmBatchSave()" id="batchSaveBtn">
+            <span>&#x1f4be;</span> Save Selected Readings
+          </button>
+          <button class="btn btn-secondary" onclick="discardBatchReview()">
+            Discard Batch
+          </button>
+        </div>
+      </div>
+
+      <!-- Batch Summary Pills -->
+      <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; padding: 12px; background: rgba(11, 15, 25, 0.4); border-radius: var(--radius-sm); border: 1px solid var(--surface-border);">
+        <div class="badge" style="background: rgba(59, 130, 246, 0.15); color: #93c5fd; padding: 6px 12px;">
+          Total: <strong id="batchSummaryTotal">0</strong>
+        </div>
+        <div class="badge cat-normal" style="padding: 6px 12px;">
+          Valid: <strong id="batchSummarySuccess">0</strong>
+        </div>
+        <div class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171; padding: 6px 12px;">
+          Unreadable / Incomplete: <strong id="batchSummaryUnreadable">0</strong>
+        </div>
+        <div class="badge cat-stage1" style="padding: 6px 12px;">
+          Missing EXIF Dates: <strong id="batchSummaryMissingDate">0</strong>
+        </div>
+        <div class="badge cat-stage1" style="padding: 6px 12px;">
+          Duplicates Detected: <strong id="batchSummaryDuplicates">0</strong>
+        </div>
+      </div>
+
+      <!-- Batch Table Container -->
+      <div class="table-container">
+        <table class="batch-review-table">
+          <thead>
+            <tr>
+              <th style="width: 40px; text-align: center;"><input type="checkbox" id="batchSelectAll" checked onchange="toggleSelectAllBatch(this.checked)" style="cursor: pointer;"></th>
+              <th style="width: 70px;">Photo</th>
+              <th>Capture Date & Time</th>
+              <th style="width: 90px; text-align: center;">SYS</th>
+              <th style="width: 90px; text-align: center;">DIA</th>
+              <th style="width: 90px; text-align: center;">PUL</th>
+              <th>Category</th>
+              <th>Status / Duplicate</th>
+              <th>Notes</th>
+              <th style="width: 40px; text-align: center;">Remove</th>
+            </tr>
+          </thead>
+          <tbody id="batchReviewTableBody">
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Chronological Graph Dashboard Card -->
+    <div class="card" id="chartCard" style="margin-bottom: 32px;">
+      <div class="chart-toolbar">
+        <div>
+          <div class="card-title"><span>&#x1f4c8;</span> Chronological Blood Pressure Trends & Analysis</div>
+          <div class="card-desc" style="margin-bottom: 0;">Interactive time-series visualization & descriptive statistics.</div>
+        </div>
+        <!-- Subview selection -->
+        <div class="pill-group" id="subviewToggle">
+          <button class="pill-btn active" id="btnViewCombined" onclick="setChartSubView('combined')">Combined BP</button>
+          <button class="pill-btn" id="btnViewSys" onclick="setChartSubView('sys')">Systolic (SYS)</button>
+          <button class="pill-btn" id="btnViewDia" onclick="setChartSubView('dia')">Diastolic (DIA)</button>
+          <button class="pill-btn" id="btnViewPul" onclick="setChartSubView('pul')">Pulse (PUL)</button>
+        </div>
+      </div>
+
+      <!-- Time Period Filters and Custom Date Range -->
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; background: rgba(11, 15, 25, 0.4); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--surface-border);">
+        <div class="pill-group" id="periodToggle">
+          <button class="pill-btn" id="btnPeriodDaily" onclick="setChartPeriod('daily')">Daily (Today)</button>
+          <button class="pill-btn" id="btnPeriodWeekly" onclick="setChartPeriod('weekly')">Weekly (7D)</button>
+          <button class="pill-btn" id="btnPeriodMonthly" onclick="setChartPeriod('monthly')">Monthly (30D)</button>
+          <button class="pill-btn active" id="btnPeriodAll" onclick="setChartPeriod('all')">All Time</button>
+        </div>
+
+        <!-- Date Range Picker -->
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <label style="font-size: 12px; color: var(--text-muted);">Range:</label>
+          <input type="date" id="chartStartDate" style="width: auto; padding: 6px 10px; font-size: 12px;">
+          <span style="color: var(--text-muted); font-size: 12px;">to</span>
+          <input type="date" id="chartEndDate" style="width: auto; padding: 6px 10px; font-size: 12px;">
+          <button class="btn btn-secondary" onclick="applyCustomDateFilter()" style="padding: 6px 12px; font-size: 12px;">Apply</button>
+          <button class="btn btn-secondary" onclick="resetChartFilter()" style="padding: 6px 12px; font-size: 12px;">Reset</button>
+        </div>
+      </div>
+
+      <!-- Chart Canvas -->
+      <div class="chart-canvas-wrap" style="position: relative; height: 320px; width: 100%;">
+        <canvas id="bpChartCanvas"></canvas>
+      </div>
+
+      <!-- Descriptive Statistics KPI Summary Grid -->
+      <div class="chart-stats-grid">
+        <div class="stat-card" style="padding: 12px;">
+          <div class="stat-val" id="chartMeanBP" style="font-size: 18px;">- / -</div>
+          <div class="stat-lbl">Mean BP (SYS / DIA)</div>
+        </div>
+        <div class="stat-card" style="padding: 12px;">
+          <div class="stat-val" id="chartPulsePressure" style="font-size: 18px;">-</div>
+          <div class="stat-lbl">Pulse Pressure (ΔPP)</div>
+        </div>
+        <div class="stat-card" style="padding: 12px;">
+          <div class="stat-val" id="chartMeanPulse" style="font-size: 18px;">-</div>
+          <div class="stat-lbl">Mean Pulse</div>
+        </div>
+        <div class="stat-card" style="padding: 12px;">
+          <div class="stat-val" id="chartRangeSys" style="font-size: 18px;">-</div>
+          <div class="stat-lbl">Sys Range (Min – Max)</div>
+        </div>
+        <div class="stat-card" style="padding: 12px;">
+          <div class="stat-val" id="chartRangeDia" style="font-size: 18px;">-</div>
+          <div class="stat-lbl">Dia Range (Min – Max)</div>
+        </div>
+        <div class="stat-card" style="padding: 12px;">
+          <div class="stat-val" id="chartCount" style="font-size: 18px;">0</div>
+          <div class="stat-lbl">Readings in Period</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 12px; font-size: 11px; color: var(--text-muted); text-align: right;">
+        * Descriptive statistics for tracking trends only. Not an automated medical diagnosis or clinical assessment.
+      </div>
+    </div>
+
     <!-- Reading History Card -->
     <div class="card">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
@@ -872,9 +1232,17 @@
           <div class="card-title"><span>&#x1f4ca;</span> Blood Pressure History Log</div>
           <div class="card-desc" style="margin-bottom: 0;">Verified personal blood pressure records.</div>
         </div>
-        <button class="btn btn-secondary" onclick="exportCSV()" style="font-size: 13px;">
-          <span>&#x2913;</span> Export to CSV
-        </button>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <label style="font-size: 12px; color: var(--text-muted);">Filter:</label>
+          <input type="date" id="historyStartDate" style="width: auto; padding: 6px 10px; font-size: 12px;">
+          <span style="color: var(--text-muted); font-size: 12px;">to</span>
+          <input type="date" id="historyEndDate" style="width: auto; padding: 6px 10px; font-size: 12px;">
+          <button class="btn btn-secondary" onclick="filterHistoryByDate()" style="padding: 6px 12px; font-size: 12px;">Filter</button>
+          <button class="btn btn-secondary" onclick="resetHistoryFilter()" style="padding: 6px 12px; font-size: 12px;">Reset</button>
+          <button class="btn btn-secondary" onclick="exportCSV()" style="font-size: 13px;">
+            <span>&#x2913;</span> Export to CSV
+          </button>
+        </div>
       </div>
 
       <div class="table-container">
@@ -1112,12 +1480,35 @@
 
     function switchTab(tab) {
       const isUpload = tab === 'upload';
-      document.getElementById('tabUpload').classList.toggle('active', isUpload);
-      document.getElementById('tabCamera').classList.toggle('active', !isUpload);
-      document.getElementById('uploadView').style.display = isUpload ? 'block' : 'none';
-      document.getElementById('cameraView').style.display = isUpload ? 'none' : 'flex';
+      const isCamera = tab === 'camera';
+      const isBatch = tab === 'batch';
 
-      if (!isUpload) {
+      document.getElementById('tabUpload').classList.toggle('active', isUpload);
+      document.getElementById('tabCamera').classList.toggle('active', isCamera);
+      document.getElementById('tabBatch').classList.toggle('active', isBatch);
+
+      document.getElementById('uploadView').style.display = isUpload ? 'block' : 'none';
+      document.getElementById('cameraView').style.display = isCamera ? 'flex' : 'none';
+      document.getElementById('batchView').style.display = isBatch ? 'block' : 'none';
+
+      // Controls visibility
+      const singleScanContainer = document.getElementById('scanBtn').parentElement;
+      const previewContainer = document.getElementById('previewContainer');
+      const modelConfig = document.getElementById('variantSelect').parentElement;
+
+      if (isBatch) {
+        singleScanContainer.style.display = 'none';
+        previewContainer.style.display = 'none';
+        modelConfig.style.display = 'none';
+      } else {
+        singleScanContainer.style.display = 'block';
+        modelConfig.style.display = 'block';
+        if (currentImageBlob) {
+          previewContainer.style.display = 'block';
+        }
+      }
+
+      if (isCamera) {
         startCamera();
       } else {
         stopCamera();
@@ -1211,6 +1602,98 @@
           alert("Sample image error: " + err.message);
         }
       }
+    }
+
+    // ========================================================================
+    // Batch Upload Queue & File Handlers
+    // ========================================================================
+
+    let batchQueue = [];
+
+    function addFilesToBatchQueue(files) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.type.startsWith('image/')) continue;
+        batchQueue.push({
+          id: 'item_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+          file: file,
+          name: file.name,
+          size: file.size,
+          url: URL.createObjectURL(file)
+        });
+      }
+      renderBatchQueue();
+    }
+
+    function handleBatchFileSelect(e) {
+      if (e.target.files && e.target.files.length > 0) {
+        addFilesToBatchQueue(e.target.files);
+        e.target.value = ''; // Reset input to allow re-selecting same files
+      }
+    }
+
+    const batchDropzone = document.getElementById('batchDropzone');
+    if (batchDropzone) {
+      batchDropzone.addEventListener('dragover', (e) => { e.preventDefault(); batchDropzone.classList.add('dragover'); });
+      batchDropzone.addEventListener('dragleave', () => { batchDropzone.classList.remove('dragover'); });
+      batchDropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        batchDropzone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+          addFilesToBatchQueue(e.dataTransfer.files);
+        }
+      });
+    }
+
+    function removeBatchQueueItem(id) {
+      const idx = batchQueue.findIndex(item => item.id === id);
+      if (idx !== -1) {
+        URL.revokeObjectURL(batchQueue[idx].url);
+        batchQueue.splice(idx, 1);
+        renderBatchQueue();
+      }
+    }
+
+    function clearBatchQueue() {
+      batchQueue.forEach(item => URL.revokeObjectURL(item.url));
+      batchQueue = [];
+      renderBatchQueue();
+    }
+
+    function renderBatchQueue() {
+      const container = document.getElementById('batchQueueContainer');
+      const statsBadge = document.getElementById('batchQueueStats');
+      const scanBtn = document.getElementById('batchScanBtn');
+
+      container.innerHTML = '';
+      if (batchQueue.length === 0) {
+        container.style.display = 'none';
+        statsBadge.innerText = '0 photos selected (0 MB)';
+        scanBtn.disabled = true;
+        return;
+      }
+
+      container.style.display = 'grid';
+      let totalBytes = 0;
+
+      batchQueue.forEach(item => {
+        totalBytes += item.size;
+        const card = document.createElement('div');
+        card.className = 'batch-item-card';
+
+        const sizeKb = (item.size / 1024).toFixed(0);
+        card.innerHTML = `
+          <button class="batch-item-del" onclick="removeBatchQueueItem('${item.id}')" title="Remove">&times;</button>
+          <img src="${item.url}" class="batch-item-thumb" alt="${item.name}">
+          <div class="batch-item-name" title="${item.name}">${item.name}</div>
+          <div class="batch-item-size">${sizeKb} KB</div>
+        `;
+        container.appendChild(card);
+      });
+
+      const totalMb = (totalBytes / (1024 * 1024)).toFixed(1);
+      statsBadge.innerText = `${batchQueue.length} photo${batchQueue.length > 1 ? 's' : ''} queued (${totalMb} MB)`;
+      scanBtn.disabled = false;
     }
 
     // ========================================================================
@@ -1352,6 +1835,7 @@
           clearSelectedImage();
           loadHistory();
           loadStats();
+          loadChartData();
         } else {
           alert("Error saving reading: " + (resData.detail || "Server error"));
         }
@@ -1369,12 +1853,549 @@
     }
 
     // ========================================================================
+    // Batch Inference & Review Handlers
+    // ========================================================================
+
+    let currentBatchData = null;
+
+    async function runBatchInference() {
+      if (batchQueue.length === 0) return;
+
+      const loader = document.getElementById('batchLoader');
+      const loaderText = document.getElementById('batchLoaderText');
+      const scanBtn = document.getElementById('batchScanBtn');
+      const variant = document.getElementById('variantSelect') ? document.getElementById('variantSelect').value : 'SMART-BP+';
+
+      loader.style.display = 'flex';
+      loaderText.innerText = `Transcribing ${batchQueue.length} photo${batchQueue.length > 1 ? 's' : ''} sequentially on CPU...`;
+      scanBtn.disabled = true;
+
+      const formData = new FormData();
+      batchQueue.forEach(item => {
+        formData.append('images', item.file, item.name);
+      });
+      formData.append('variant', variant);
+      formData.append('conf_threshold', '0.2');
+
+      try {
+        const resp = await apiFetch('/api/batch-process', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await resp.json();
+        currentBatchData = data;
+        renderBatchReview(data);
+      } catch (err) {
+        if (!err.message.includes("Unauthorized")) {
+          alert("Batch inference failed: " + err.message);
+        }
+      } finally {
+        loader.style.display = 'none';
+        scanBtn.disabled = false;
+      }
+    }
+
+    function toDatetimeLocal(str) {
+      if (!str || str.toLowerCase().includes('unavailable') || str.toLowerCase().includes('missing')) return '';
+      return str.replace(' ', 'T').slice(0, 16);
+    }
+
+    function fromDatetimeLocal(val) {
+      if (!val) return '';
+      return val.replace('T', ' ') + (val.length === 16 ? ':00' : '');
+    }
+
+    function renderBatchReview(data) {
+      const card = document.getElementById('batchReviewCard');
+      card.style.display = 'block';
+
+      // Summary counts
+      document.getElementById('batchSummaryTotal').innerText = data.summary.total_uploaded || 0;
+      document.getElementById('batchSummarySuccess').innerText = data.summary.successful_readings || 0;
+      document.getElementById('batchSummaryUnreadable').innerText = data.summary.unreadable_or_failed || 0;
+      document.getElementById('batchSummaryMissingDate').innerText = data.summary.missing_exif_dates || 0;
+      document.getElementById('batchSummaryDuplicates').innerText = data.summary.duplicates_detected || 0;
+
+      const tbody = document.getElementById('batchReviewTableBody');
+      tbody.innerHTML = '';
+
+      const items = data.items || [];
+      items.forEach((item, idx) => {
+        const tr = document.createElement('tr');
+        tr.id = `batchRow_${idx}`;
+
+        const isDup = item.is_duplicate;
+        const hasDate = item.metadata && item.metadata.has_capture_date;
+        const readings = item.readings || {};
+        const isSuccess = item.status === 'success' || item.status === 'success_date_missing';
+
+        // Checkbox checked if valid reading and NOT duplicate
+        const isChecked = isSuccess && !isDup;
+
+        const thumbSrc = item.thumbnail_base64
+          ? `data:image/jpeg;base64,${item.thumbnail_base64}`
+          : (batchQueue[idx] ? batchQueue[idx].url : '');
+
+        const initialDateVal = hasDate ? toDatetimeLocal(item.metadata.display_datetime) : '';
+
+        // Status badge
+        let statusBadge = '';
+        if (isDup) {
+          const dupTs = item.duplicate_info && item.duplicate_info.timestamp ? ` (recorded ${item.duplicate_info.timestamp})` : '';
+          statusBadge = `<span class="badge cat-stage2" title="Duplicate SHA-256 hash${dupTs}">⚠️ Duplicate</span>`;
+        } else if (item.status === 'unreadable' || item.status === 'error') {
+          statusBadge = `<span class="badge" style="background: rgba(239,68,68,0.2); color:#fca5a5;">${item.message || 'Unreadable'}</span>`;
+        } else if (!hasDate) {
+          statusBadge = `<span class="badge cat-stage1">Missing Date</span>`;
+        } else {
+          statusBadge = `<span class="badge cat-normal">Ready</span>`;
+        }
+
+        const dateBadge = hasDate
+          ? `<span class="badge cat-normal" style="font-size:10px; margin-left:4px;">${item.metadata.capture_date_source || 'EXIF'}</span>`
+          : `<span class="badge cat-stage1" style="font-size:10px; margin-left:4px;">Date Required</span>`;
+
+        tr.innerHTML = `
+          <td style="text-align: center;">
+            <input type="checkbox" id="batchCheck_${idx}" ${isChecked ? 'checked' : ''} style="cursor: pointer;">
+          </td>
+          <td>
+            ${thumbSrc ? `<img src="${thumbSrc}" class="batch-table-thumb" alt="${item.filename}">` : '-'}
+          </td>
+          <td>
+            <div style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">${item.filename} ${dateBadge}</div>
+            <input type="datetime-local" id="batchDate_${idx}" class="date-cell-input ${!hasDate ? 'missing-date' : ''}" value="${initialDateVal}">
+          </td>
+          <td style="text-align: center;">
+            <input type="number" id="batchSys_${idx}" class="table-num-input" value="${readings.sys !== null ? readings.sys : ''}" min="40" max="260" oninput="onBatchRowChange(${idx})">
+          </td>
+          <td style="text-align: center;">
+            <input type="number" id="batchDia_${idx}" class="table-num-input" value="${readings.dia !== null ? readings.dia : ''}" min="30" max="200" oninput="onBatchRowChange(${idx})">
+          </td>
+          <td style="text-align: center;">
+            <input type="number" id="batchPul_${idx}" class="table-num-input" value="${readings.pul !== null ? readings.pul : ''}" min="25" max="240">
+          </td>
+          <td>
+            <span id="batchCat_${idx}" class="badge ${getCategoryBadgeClass(item.category)}">${item.category || 'Unknown'}</span>
+          </td>
+          <td>
+            ${statusBadge}
+          </td>
+          <td>
+            <input type="text" id="batchNotes_${idx}" placeholder="Optional note" style="padding: 6px 10px; font-size: 12px; width: 140px;">
+          </td>
+          <td style="text-align: center;">
+            <button class="del-btn" onclick="removeBatchReviewRow(${idx})" title="Remove item">&times;</button>
+          </td>
+        `;
+
+        tbody.appendChild(tr);
+      });
+
+      card.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function getCategoryBadgeClass(cat) {
+      if (cat === 'Normal') return 'cat-normal';
+      if (cat === 'Elevated') return 'cat-elevated';
+      if (cat === 'Hypertension Stage 1') return 'cat-stage1';
+      if (cat === 'Hypertension Stage 2') return 'cat-stage2';
+      return 'cat-elevated';
+    }
+
+    function onBatchRowChange(idx) {
+      const sysVal = parseInt(document.getElementById(`batchSys_${idx}`).value) || null;
+      const diaVal = parseInt(document.getElementById(`batchDia_${idx}`).value) || null;
+      const catBadge = document.getElementById(`batchCat_${idx}`);
+      if (!catBadge) return;
+
+      if (!sysVal || !diaVal) {
+        catBadge.innerText = 'Incomplete';
+        catBadge.className = 'badge cat-elevated';
+        return;
+      }
+
+      let cat = 'Normal Blood Pressure';
+      let cls = 'cat-normal';
+      if (sysVal < 120 && diaVal < 80) {
+        cat = 'Normal';
+        cls = 'cat-normal';
+      } else if (sysVal <= 129 && diaVal < 80) {
+        cat = 'Elevated';
+        cls = 'cat-elevated';
+      } else if ((sysVal >= 130 && sysVal <= 139) || (diaVal >= 80 && diaVal <= 89)) {
+        cat = 'Hypertension Stage 1';
+        cls = 'cat-stage1';
+      } else {
+        cat = 'Hypertension Stage 2';
+        cls = 'cat-stage2';
+      }
+
+      catBadge.innerText = cat;
+      catBadge.className = `badge ${cls}`;
+    }
+
+    function toggleSelectAllBatch(checked) {
+      if (!currentBatchData || !currentBatchData.items) return;
+      currentBatchData.items.forEach((_, idx) => {
+        const chk = document.getElementById(`batchCheck_${idx}`);
+        if (chk) chk.checked = checked;
+      });
+    }
+
+    function removeBatchReviewRow(idx) {
+      const row = document.getElementById(`batchRow_${idx}`);
+      if (row) {
+        row.remove();
+      }
+    }
+
+    function discardBatchReview() {
+      if (confirm("Discard all batch review results?")) {
+        currentBatchData = null;
+        document.getElementById('batchReviewCard').style.display = 'none';
+        document.getElementById('batchReviewTableBody').innerHTML = '';
+      }
+    }
+
+    async function confirmBatchSave() {
+      if (!currentBatchData || !currentBatchData.items) return;
+
+      const itemsToSave = [];
+      const items = currentBatchData.items;
+
+      for (let i = 0; i < items.length; i++) {
+        const row = document.getElementById(`batchRow_${i}`);
+        if (!row) continue;
+
+        const chk = document.getElementById(`batchCheck_${i}`);
+        if (!chk || !chk.checked) continue;
+
+        const sysInput = document.getElementById(`batchSys_${i}`);
+        const diaInput = document.getElementById(`batchDia_${i}`);
+        const pulInput = document.getElementById(`batchPul_${i}`);
+        const dateInput = document.getElementById(`batchDate_${i}`);
+        const notesInput = document.getElementById(`batchNotes_${i}`);
+
+        const sysVal = parseInt(sysInput.value);
+        const diaVal = parseInt(diaInput.value);
+        const pulVal = pulInput.value ? parseInt(pulInput.value) : null;
+        const dateVal = dateInput.value.trim();
+        const notesVal = notesInput.value.trim();
+
+        if (isNaN(sysVal) || isNaN(diaVal)) {
+          alert(`Row ${i + 1} (${items[i].filename}): Please enter valid numeric Systolic and Diastolic values.`);
+          sysInput.focus();
+          return;
+        }
+
+        if (!dateVal) {
+          alert(`Row ${i + 1} (${items[i].filename}): Capture date/time is required. Please pick a date and time.`);
+          dateInput.focus();
+          dateInput.classList.add('missing-date');
+          return;
+        }
+
+        const timestampStr = fromDatetimeLocal(dateVal);
+        const origReadings = items[i].readings || {};
+
+        itemsToSave.push({
+          sys: sysVal,
+          dia: diaVal,
+          pulse: pulVal,
+          timestamp: timestampStr,
+          model_variant: items[i].metadata ? items[i].metadata.model_variant || 'SMART-BP+' : 'SMART-BP+',
+          confidence: items[i].confidence && items[i].confidence.average ? items[i].confidence.average : 1.0,
+          original_sys: origReadings.sys,
+          original_dia: origReadings.dia,
+          original_pulse: origReadings.pul,
+          notes: notesVal,
+          image_hash: items[i].metadata ? items[i].metadata.image_hash : null,
+          image_filename: items[i].filename,
+          capture_date_source: (items[i].metadata && items[i].metadata.has_capture_date)
+            ? items[i].metadata.capture_date_source
+            : "UserConfirmed"
+        });
+      }
+
+      if (itemsToSave.length === 0) {
+        alert("No readings selected to save. Please check at least one valid reading.");
+        return;
+      }
+
+      const saveBtn = document.getElementById('batchSaveBtn');
+      saveBtn.disabled = true;
+      saveBtn.innerText = "Saving Readings...";
+
+      try {
+        const resp = await apiFetch('/api/batch-confirm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: itemsToSave })
+        });
+        const result = await resp.json();
+        if (resp.ok) {
+          alert(`Successfully saved ${result.saved_count} blood pressure reading${result.saved_count > 1 ? 's' : ''}!`);
+          document.getElementById('batchReviewCard').style.display = 'none';
+          currentBatchData = null;
+          clearBatchQueue();
+          loadHistory();
+          loadStats();
+          loadChartData();
+        } else {
+          alert("Error saving batch: " + (result.detail || "Server error"));
+        }
+      } catch (err) {
+        if (!err.message.includes("Unauthorized")) {
+          alert("Failed to save batch: " + err.message);
+        }
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<span>&#x1f4be;</span> Save Selected Readings';
+      }
+    }
+
+    // ========================================================================
+    // Chronological Chart.js Dashboard & Trends
+    // ========================================================================
+
+    let bpChart = null;
+    let currentChartPeriod = 'all';
+    let currentChartSubView = 'combined';
+    let currentChartReadings = [];
+
+    async function loadChartData(period, startDate, endDate) {
+      const activePeriod = period !== undefined && period !== null ? period : currentChartPeriod;
+      let url = `/api/chart-data?period=${encodeURIComponent(activePeriod || 'all')}`;
+      if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+      if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+
+      try {
+        const resp = await apiFetch(url);
+        const data = await resp.json();
+        currentChartReadings = data.readings || [];
+
+        // Update KPI summary
+        const s = data.summary || {};
+        const meanBPText = (s.mean_sys !== null && s.mean_dia !== null && s.mean_sys !== undefined && s.mean_dia !== undefined)
+          ? `${s.mean_sys} / ${s.mean_dia} mmHg`
+          : '- / -';
+        document.getElementById('chartMeanBP').innerText = meanBPText;
+
+        const pp = (s.mean_sys !== null && s.mean_dia !== null && s.mean_sys !== undefined && s.mean_dia !== undefined)
+          ? `${Math.round((s.mean_sys - s.mean_dia) * 10) / 10} mmHg`
+          : '-';
+        document.getElementById('chartPulsePressure').innerText = pp;
+
+        document.getElementById('chartMeanPulse').innerText = (s.mean_pulse !== null && s.mean_pulse !== undefined) ? `${s.mean_pulse} BPM` : '-';
+        document.getElementById('chartRangeSys').innerText = (s.min_sys !== null && s.max_sys !== null && s.min_sys !== undefined)
+          ? `${s.min_sys} – ${s.max_sys} mmHg`
+          : '-';
+        document.getElementById('chartRangeDia').innerText = (s.min_dia !== null && s.max_dia !== null && s.min_dia !== undefined)
+          ? `${s.min_dia} – ${s.max_dia} mmHg`
+          : '-';
+        document.getElementById('chartCount').innerText = s.total_count || 0;
+
+        renderChartCanvas(currentChartReadings);
+      } catch (err) {
+        console.error("Error loading chart data:", err);
+      }
+    }
+
+    function renderChartCanvas(readings) {
+      const canvas = document.getElementById('bpChartCanvas');
+      if (!canvas || typeof Chart === 'undefined') return;
+
+      if (bpChart) {
+        bpChart.destroy();
+        bpChart = null;
+      }
+
+      const labels = readings.map(r => r.timestamp);
+      const sysData = readings.map(r => r.sys);
+      const diaData = readings.map(r => r.dia);
+      const pulData = readings.map(r => r.pulse);
+
+      const hideSys = currentChartSubView === 'dia' || currentChartSubView === 'pul';
+      const hideDia = currentChartSubView === 'sys' || currentChartSubView === 'pul';
+      const hidePul = currentChartSubView === 'sys' || currentChartSubView === 'dia';
+
+      const ctx = canvas.getContext('2d');
+      bpChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Systolic (SYS)',
+              data: sysData,
+              borderColor: '#ef4444',
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              borderWidth: 2.5,
+              pointBackgroundColor: '#ef4444',
+              pointRadius: readings.length > 50 ? 2 : 4,
+              pointHoverRadius: 6,
+              tension: 0.2,
+              spanGaps: false,
+              hidden: hideSys,
+              yAxisID: 'y'
+            },
+            {
+              label: 'Diastolic (DIA)',
+              data: diaData,
+              borderColor: '#3b82f6',
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              borderWidth: 2.5,
+              pointBackgroundColor: '#3b82f6',
+              pointRadius: readings.length > 50 ? 2 : 4,
+              pointHoverRadius: 6,
+              tension: 0.2,
+              spanGaps: false,
+              hidden: hideDia,
+              yAxisID: 'y'
+            },
+            {
+              label: 'Pulse (PUL)',
+              data: pulData,
+              borderColor: '#10b981',
+              backgroundColor: 'rgba(16, 185, 129, 0.1)',
+              borderWidth: 2,
+              borderDash: [4, 4],
+              pointBackgroundColor: '#10b981',
+              pointRadius: readings.length > 50 ? 2 : 4,
+              pointHoverRadius: 6,
+              tension: 0.2,
+              spanGaps: false,
+              hidden: hidePul,
+              yAxisID: 'y'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false
+          },
+          plugins: {
+            legend: {
+              position: 'top',
+              labels: {
+                color: '#cbd5e1',
+                font: { family: "'Plus Jakarta Sans', sans-serif", size: 12, weight: '600' },
+                usePointStyle: true,
+                padding: 16
+              }
+            },
+            tooltip: {
+              backgroundColor: 'rgba(19, 27, 46, 0.95)',
+              titleColor: '#f1f5f9',
+              bodyColor: '#e2e8f0',
+              borderColor: '#1f2c47',
+              borderWidth: 1,
+              padding: 12,
+              callbacks: {
+                afterBody: function(context) {
+                  const dataIndex = context[0].dataIndex;
+                  const item = readings[dataIndex];
+                  if (!item) return '';
+                  let extra = `\nCategory: ${item.category}`;
+                  if (item.notes) extra += `\nNotes: ${item.notes}`;
+                  if (item.image_filename) extra += `\nFile: ${item.image_filename}`;
+                  return extra;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(255, 255, 255, 0.04)' },
+              ticks: {
+                color: '#94a3b8',
+                font: { size: 11 },
+                maxRotation: 45,
+                autoSkip: true,
+                maxTicksLimit: 12
+              }
+            },
+            y: {
+              suggestedMin: 40,
+              suggestedMax: 160,
+              grid: { color: 'rgba(255, 255, 255, 0.06)' },
+              ticks: {
+                color: '#94a3b8',
+                font: { size: 11 }
+              },
+              title: {
+                display: true,
+                text: 'mmHg / BPM',
+                color: '#94a3b8',
+                font: { size: 12, weight: '600' }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function setChartSubView(subview) {
+      currentChartSubView = subview;
+
+      document.getElementById('btnViewCombined').classList.toggle('active', subview === 'combined');
+      document.getElementById('btnViewSys').classList.toggle('active', subview === 'sys');
+      document.getElementById('btnViewDia').classList.toggle('active', subview === 'dia');
+      document.getElementById('btnViewPul').classList.toggle('active', subview === 'pul');
+
+      if (bpChart) {
+        bpChart.data.datasets[0].hidden = subview === 'dia' || subview === 'pul';
+        bpChart.data.datasets[1].hidden = subview === 'sys' || subview === 'pul';
+        bpChart.data.datasets[2].hidden = subview === 'sys' || subview === 'dia';
+        bpChart.update();
+      }
+    }
+
+    function setChartPeriod(period) {
+      currentChartPeriod = period;
+
+      document.getElementById('btnPeriodDaily').classList.toggle('active', period === 'daily');
+      document.getElementById('btnPeriodWeekly').classList.toggle('active', period === 'weekly');
+      document.getElementById('btnPeriodMonthly').classList.toggle('active', period === 'monthly');
+      document.getElementById('btnPeriodAll').classList.toggle('active', period === 'all');
+
+      document.getElementById('chartStartDate').value = '';
+      document.getElementById('chartEndDate').value = '';
+
+      loadChartData(period, '', '');
+    }
+
+    function applyCustomDateFilter() {
+      const s = document.getElementById('chartStartDate').value;
+      const e = document.getElementById('chartEndDate').value;
+      if (!s && !e) return;
+
+      document.querySelectorAll('#periodToggle .pill-btn').forEach(btn => btn.classList.remove('active'));
+      currentChartPeriod = null;
+      loadChartData(null, s, e);
+    }
+
+    function resetChartFilter() {
+      document.getElementById('chartStartDate').value = '';
+      document.getElementById('chartEndDate').value = '';
+      setChartPeriod('all');
+    }
+
+    // ========================================================================
     // History & Analytics (Personal Records)
     // ========================================================================
 
-    async function loadHistory() {
+    async function loadHistory(startDate, endDate) {
       try {
-        const resp = await apiFetch('/api/history');
+        let url = '/api/history?limit=500';
+        if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+        if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+
+        const resp = await apiFetch(url);
         const data = await resp.json();
         const tbody = document.getElementById('historyTableBody');
         tbody.innerHTML = '';
@@ -1393,9 +2414,10 @@
 
           const correctedBadge = r.was_corrected ? '<span style="font-size:10px; color:#f59e0b; margin-left:4px;">(edited)</span>' : '';
           const confText = r.confidence ? `${Math.round(r.confidence * 100)}%` : 'Manual';
+          const fileInfo = r.image_filename ? `<div style="font-size:10px; color:var(--text-muted);">${r.image_filename}</div>` : '';
 
           tr.innerHTML = `
-            <td style="font-family: monospace;">${r.timestamp}</td>
+            <td style="font-family: monospace;">${r.timestamp} ${fileInfo}</td>
             <td><strong>${r.sys}</strong> mmHg</td>
             <td><strong>${r.dia}</strong> mmHg</td>
             <td>${r.pulse ? r.pulse + ' BPM' : '-'}</td>
@@ -1409,6 +2431,18 @@
       } catch (err) {
         console.error("Error loading history:", err);
       }
+    }
+
+    function filterHistoryByDate() {
+      const s = document.getElementById('historyStartDate').value;
+      const e = document.getElementById('historyEndDate').value;
+      loadHistory(s, e);
+    }
+
+    function resetHistoryFilter() {
+      document.getElementById('historyStartDate').value = '';
+      document.getElementById('historyEndDate').value = '';
+      loadHistory();
     }
 
     async function loadStats() {
@@ -1430,6 +2464,7 @@
         await apiFetch(`/api/history/${id}`, { method: 'DELETE' });
         loadHistory();
         loadStats();
+        loadChartData();
       } catch (err) {
         if (!err.message.includes("Unauthorized")) {
           alert("Delete failed: " + err.message);
@@ -1445,9 +2480,9 @@
             alert("No readings available to export.");
             return;
           }
-          let csv = "ID,Timestamp,Systolic,Diastolic,Pulse,Category,Model,Confidence,Notes\n";
+          let csv = "ID,Timestamp,Systolic,Diastolic,Pulse,Category,Model,Confidence,Notes,Filename\n";
           data.readings.forEach(r => {
-            csv += `"${r.id}","${r.timestamp}","${r.sys}","${r.dia}","${r.pulse || ''}","${r.category}","${r.model_variant}","${r.confidence || ''}","${(r.notes || '').replace(/"/g, '""')}"\n`;
+            csv += `"${r.id}","${r.timestamp}","${r.sys}","${r.dia}","${r.pulse || ''}","${r.category}","${r.model_variant}","${r.confidence || ''}","${(r.notes || '').replace(/"/g, '""')}","${r.image_filename || ''}"\n`;
           });
           const blob = new Blob([csv], { type: 'text/csv' });
           const url = URL.createObjectURL(blob);
@@ -1498,6 +2533,7 @@
           updateAuthUI(true);
           loadHistory();
           loadStats();
+          loadChartData();
         } else {
           clearStoredToken();
           updateAuthUI(false);

@@ -334,6 +334,221 @@ def test_9_user_scoped_isolation():
     print(">>> TEST 9 PASSED: Complete data isolation and ownership enforcement verified.\n")
 
 
+def test_10_batch_processing_and_exif_extraction():
+    print("--- [TEST 10] Batch Multi-Photo Processing & EXIF Metadata Extraction ---")
+    client = TestClient(app)
+    expected_token = get_expected_token()
+
+    from PIL import Image, ExifTags
+    import io
+
+    # 1. Prepare Image 1: Reference monitor with EXIF DateTimeOriginal
+    sample_img_path = os.path.join(PROJECT_ROOT, "test_images", "synthetic_ihealth_120_80_72.png")
+    with Image.open(sample_img_path) as im:
+        exif = im.getexif()
+        exif_ifd = exif.get_ifd(ExifTags.IFD.Exif)
+        exif_ifd[36867] = "2026:09:15 07:45:00"  # DateTimeOriginal
+        buf1 = io.BytesIO()
+        im.convert("RGB").save(buf1, format="JPEG", exif=exif)
+        img1_bytes = buf1.getvalue()
+
+    # 2. Prepare Image 2: PNG without EXIF
+    img2 = Image.new("RGB", (100, 100), color=(240, 240, 240))
+    buf2 = io.BytesIO()
+    img2.save(buf2, format="PNG")
+    img2_bytes = buf2.getvalue()
+
+    # Unauthorized access check
+    resp_unauth = client.post(
+        "/api/batch-process",
+        files=[
+            ("images", ("photo1.jpg", img1_bytes, "image/jpeg")),
+            ("images", ("photo2.png", img2_bytes, "image/png"))
+        ]
+    )
+    assert resp_unauth.status_code == 401, f"Expected 401 Unauthorized, got {resp_unauth.status_code}"
+    print("  * Unauthorized batch-process request blocked with 401")
+
+    # Authorized batch processing
+    resp = client.post(
+        "/api/batch-process",
+        files=[
+            ("images", ("monitor_exif.jpg", img1_bytes, "image/jpeg")),
+            ("images", ("no_exif.png", img2_bytes, "image/png"))
+        ],
+        data={"variant": "SMART-BP+"},
+        headers={"X-Access-Token": expected_token}
+    )
+    assert resp.status_code == 200, f"Batch process failed: {resp.text}"
+    data = resp.json()
+    assert data["status"] == "success"
+    assert data["total_processed"] == 2
+    assert len(data["items"]) == 2
+
+    # Verify item 0 (with EXIF)
+    item0 = data["items"][0]
+    assert item0["filename"] == "monitor_exif.jpg"
+    assert item0["metadata"]["capture_date"] == "2026-09-15 07:45:00"
+    assert "2026-09-15 07:45:00" in item0["metadata"]["display_datetime"]
+    assert "Asia/Kolkata" in item0["metadata"]["display_datetime"]
+    assert item0["metadata"]["image_hash"] is not None
+    assert len(item0["metadata"]["image_hash"]) == 64
+    assert item0["thumbnail_base64"] is not None
+    assert item0["readings"]["sys"] == 120
+    assert item0["readings"]["dia"] == 80
+    assert item0["readings"]["pul"] == 72
+    print(f"  * Item 0 EXIF parsed: {item0['metadata']['display_datetime']}, Transcribed: 120/80/72")
+
+    # Verify item 1 (without EXIF)
+    item1 = data["items"][1]
+    assert item1["filename"] == "no_exif.png"
+    assert item1["metadata"]["has_capture_date"] is False
+    assert item1["metadata"]["display_datetime"] == "Capture date unavailable"
+    assert item1["metadata"]["image_hash"] is not None
+    print("  * Item 1 Missing EXIF flagged correctly as 'Capture date unavailable'")
+    print(">>> TEST 10 PASSED: Batch inference, thumbnail generation, and EXIF extraction verified.\n")
+
+
+def test_11_batch_confirmation_and_duplicate_detection():
+    print("--- [TEST 11] Batch Confirmation, Timestamp Validation & Duplicate Prevention ---")
+    client = TestClient(app)
+    expected_token = get_expected_token()
+    auth_headers = {"X-Access-Token": expected_token}
+
+    from PIL import Image, ExifTags
+    import io
+
+    # Create distinct image with EXIF date
+    img = Image.new("RGB", (120, 120), color=(10, 20, 30))
+    exif = img.getexif()
+    exif_ifd = exif.get_ifd(ExifTags.IFD.Exif)
+    exif_ifd[36867] = "2026:09:18 10:15:00"
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", exif=exif)
+    img_bytes = buf.getvalue()
+
+    # 1. Process image via batch-process
+    proc_resp = client.post(
+        "/api/batch-process",
+        files=[("images", ("distinct_reading.jpg", img_bytes, "image/jpeg"))],
+        headers=auth_headers
+    )
+    assert proc_resp.status_code == 200
+    item = proc_resp.json()["items"][0]
+    img_hash = item["metadata"]["image_hash"]
+    assert item["is_duplicate"] is False
+
+    # 2. Test batch confirm validation: empty timestamp rejected
+    bad_confirm = client.post(
+        "/api/batch-confirm",
+        json={"items": [{
+            "sys": 118,
+            "dia": 78,
+            "pulse": 68,
+            "timestamp": "",
+            "image_filename": "distinct_reading.jpg"
+        }]},
+        headers=auth_headers
+    )
+    assert bad_confirm.status_code == 400
+    print("  * Timestamp validation: Batch item with empty timestamp rejected with 400")
+
+    # 3. Test valid batch confirmation
+    confirm_resp = client.post(
+        "/api/batch-confirm",
+        json={"items": [{
+            "sys": 118,
+            "dia": 78,
+            "pulse": 68,
+            "timestamp": "2026-09-18 10:15:00",
+            "model_variant": "SMART-BP+",
+            "confidence": 0.98,
+            "image_hash": img_hash,
+            "image_filename": "distinct_reading.jpg",
+            "capture_date_source": "EXIF:DateTimeOriginal"
+        }]},
+        headers=auth_headers
+    )
+    assert confirm_resp.status_code == 200
+    data = confirm_resp.json()
+    assert data["saved_count"] == 1
+    saved_id = data["records"][0]["id"]
+    print(f"  * Reading saved successfully via batch-confirm with ID {saved_id}")
+
+    # 4. Duplicate Detection Test: Re-processing identical image
+    dup_proc_resp = client.post(
+        "/api/batch-process",
+        files=[("images", ("distinct_reading.jpg", img_bytes, "image/jpeg"))],
+        headers=auth_headers
+    )
+    assert dup_proc_resp.status_code == 200
+    dup_item = dup_proc_resp.json()["items"][0]
+    assert dup_item["is_duplicate"] is True, "Expected is_duplicate to be True"
+    assert dup_item["duplicate_info"]["id"] == saved_id
+    assert dup_item["duplicate_info"]["timestamp"] == "2026-09-18 10:15:00"
+    print("  * Duplicate detection verified: Re-uploaded identical image flagged with existing ID and timestamp")
+    print(">>> TEST 11 PASSED: Batch confirmation and SHA-256 duplicate detection verified.\n")
+
+
+def test_12_chronological_chart_data_and_filtering():
+    print("--- [TEST 12] Chronological Chart Data, Time-Series Sorting & Descriptive Stats ---")
+    client = TestClient(app)
+    expected_token = get_expected_token()
+    auth_headers = {"X-Access-Token": expected_token}
+
+    # 1. Unauthorized check
+    unauth = client.get("/api/chart-data")
+    assert unauth.status_code == 401
+    print("  * Unauthenticated GET /api/chart-data blocked with 401")
+
+    # 2. Add test records spanning different dates to verify sorting and filtering
+    database.save_reading(sys=122, dia=81, pulse=71, custom_timestamp="2026-09-10 08:00:00", notes="Early reading")
+    database.save_reading(sys=128, dia=84, pulse=74, custom_timestamp="2026-09-22 18:30:00", notes="Later reading")
+
+    # 3. Authorized chart data query
+    chart_resp = client.get("/api/chart-data?period=all", headers=auth_headers)
+    assert chart_resp.status_code == 200
+    data = chart_resp.json()
+    assert data["status"] == "success"
+    readings = data["readings"]
+    assert len(readings) >= 2
+
+    # Verify chronological sorting (ASC: oldest to newest)
+    timestamps = [r["timestamp"] for r in readings]
+    assert timestamps == sorted(timestamps), f"Readings are not sorted chronologically ASC: {timestamps}"
+    print(f"  * Verified chronological ASC ordering across {len(readings)} readings")
+
+    # Verify descriptive statistics summary
+    summary = data["summary"]
+    assert summary["total_count"] == len(readings)
+    assert summary["mean_sys"] is not None
+    assert summary["mean_dia"] is not None
+    assert summary["min_sys"] <= summary["max_sys"]
+    assert summary["min_dia"] <= summary["max_dia"]
+    assert "disclaimer" in summary
+    assert "Not a medical evaluation or diagnosis" in summary["disclaimer"]
+    print(f"  * Descriptive statistics: Mean SYS={summary['mean_sys']}, Mean DIA={summary['mean_dia']}, Count={summary['total_count']}")
+
+    # 4. Date range filtering on chart-data
+    filtered_chart = client.get(
+        "/api/chart-data?start_date=2026-09-22&end_date=2026-09-22",
+        headers=auth_headers
+    ).json()
+    assert filtered_chart["count"] == 1
+    assert filtered_chart["readings"][0]["timestamp"] == "2026-09-22 18:30:00"
+    print("  * Chart data range filter (start_date/end_date) verified")
+
+    # 5. Date range filtering on history log
+    hist_filtered = client.get(
+        "/api/history?start_date=2026-09-10&end_date=2026-09-10",
+        headers=auth_headers
+    ).json()
+    assert hist_filtered["count"] == 1
+    assert hist_filtered["readings"][0]["timestamp"] == "2026-09-10 08:00:00"
+    print("  * History log range filter verified")
+    print(">>> TEST 12 PASSED: Chronological chart datasets, statistics, and date filters verified.\n")
+
+
 if __name__ == "__main__":
     print("================================================================")
     print("      SMART-BP PRODUCTION & SECURITY TEST SUITE                 ")
@@ -347,6 +562,10 @@ if __name__ == "__main__":
     test_7_security_access_token_enforcement()
     test_8_security_headers_and_path_sanitization()
     test_9_user_scoped_isolation()
+    test_10_batch_processing_and_exif_extraction()
+    test_11_batch_confirmation_and_duplicate_detection()
+    test_12_chronological_chart_data_and_filtering()
     print("================================================================")
-    print("           ALL 9 TEST SUITES PASSED CLEANLY!                    ")
+    print("           ALL 12 TEST SUITES PASSED CLEANLY!                   ")
     print("================================================================")
+
