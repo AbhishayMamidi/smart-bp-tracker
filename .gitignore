@@ -1,0 +1,40 @@
+# Virtual Environments
+.venv/
+venv/
+env/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# Private health data & local database
+*.db
+*.sqlite
+*.sqlite3
+bp_tracker.db
+
+# Secrets & Environment variables
+.env
+.env.*
+*.key
+*.pem
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Output & Temporary Test Files
+*.log
+test_images/annotated_result.jpg
+test_images/result.jpg
+*.zip
+
+# Exclude large paper PDF from Git repository (35MB)
+21269694/**/Paper/*.pdf
+
+# Ensure pretrained model weights are tracked in private repository
+!21269694/**/Saved_Models/*.pt

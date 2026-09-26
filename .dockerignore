@@ -1,0 +1,33 @@
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Git
+.git/
+.gitignore
+
+# Bytecode & Caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Databases & Private Logs
+*.db
+*.sqlite
+*.sqlite3
+bp_tracker.db
+*.log
+
+# Secrets & Environment configs
+.env
+.env.*
+*.pem
+*.key
+
+# Temporary artifacts & Large Paper PDF (saves 35MB in container)
+21269694/**/Paper/
+*.zip
+test_images/annotated_result.jpg
+test_images/result.jpg

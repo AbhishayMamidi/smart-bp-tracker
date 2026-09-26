@@ -1,0 +1,15 @@
+# Production dependencies for SMART-BP Blood Pressure Tracker on Linux / Docker
+# Uses CPU-optimized PyTorch wheels to keep container size compact (~1.2GB vs ~6GB with CUDA)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.2.0
+torchvision>=0.17.0
+ultralytics>=8.2.0
+opencv-python-headless>=4.8.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+python-multipart>=0.0.9
+pillow>=10.0.0
+numpy>=1.24.0
+pydantic>=2.6.0
+supabase>=2.4.0
+httpx>=0.27.0

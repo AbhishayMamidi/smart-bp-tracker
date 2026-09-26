@@ -1,0 +1,35 @@
+# Render Infrastructure-as-Code Blueprint for SMART-BP Tracker
+# Documentation: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: smart-bp-tracker
+    runtime: docker
+    dockerfilePath: Dockerfile
+    plan: starter # Change to free if using Supabase cloud database
+    region: oregon # or ohio, frankfurt, singapore
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: MAX_UPLOAD_SIZE_MB
+        value: 20
+      - key: DATABASE_PATH
+        value: /var/data/bp_tracker.db
+      # Optional: Set these in Render Dashboard for Cloud Database & Security
+      # - key: SUPABASE_URL
+      #   sync: false
+      # - key: SUPABASE_SERVICE_ROLE_KEY
+      #   sync: false
+      # - key: APP_ACCESS_TOKEN
+      #   sync: false
+
+    # Persistent Disk configuration (Recommended for SQLite persistence on Render)
+    # Note: Disks require a paid instance type (Starter $7/mo + $0.25/GB disk).
+    # If using Render Free Tier, remove the disk block below and use Supabase instead.
+    disk:
+      name: bp-data
+      mountPath: /var/data
+      sizeGB: 1

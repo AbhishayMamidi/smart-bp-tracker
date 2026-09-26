@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blood Pressure Tracker — SMART-BP AI Digitization</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --surface: #131b2e;
+      --surface-border: #1f2c47;
+      --surface-hover: #1a253e;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-light: rgba(59, 130, 246, 0.15);
+      --accent: #10b981;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --elevated: #3b82f6;
+      --stage1: #f97316;
+      --stage2: #ef4444;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+      --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.5;
+    }
+
+    header {
+      background: rgba(19, 27, 46, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--surface-border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 16px 24px;
+    }
+
+    .header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 42px;
+      height: 42px;
+      background: linear-gradient(135deg, #ef4444, #3b82f6);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+    }
+
+    .logo-text h1 {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(90deg, #fff, #93c5fd);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .logo-text p {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .engine-status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 10px var(--accent);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.2); }
+    }
+
+    main {
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 32px 24px;
+      flex: 1;
+    }
+
+    .grid-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      margin-bottom: 32px;
+    }
+
+    @media (max-width: 900px) {
+      .grid-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    /* Tabs */
+    .tab-header {
+      display: flex;
+      gap: 8px;
+      background: rgba(11, 15, 25, 0.6);
+      padding: 4px;
+      border-radius: var(--radius-md);
+      margin-bottom: 20px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 10px 16px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .tab-btn.active {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+    }
+
+    /* Drop Zone */
+    .dropzone {
+      border: 2px dashed var(--surface-border);
+      border-radius: var(--radius-md);
+      padding: 36px 20px;
+      text-align: center;
+      cursor: pointer;
+      background: rgba(11, 15, 25, 0.4);
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--primary);
+      background: var(--primary-light);
+    }
+
+    .dropzone-icon {
+      font-size: 36px;
+      color: var(--primary);
+    }
+
+    .dropzone-text {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .dropzone-subtext {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* Camera Viewfinder */
+    .camera-box {
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      height: 320px;
+      background: #000;
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .viewfinder-overlay {
+      position: absolute;
+      top: 15%;
+      left: 15%;
+      right: 15%;
+      bottom: 15%;
+      border: 2px solid rgba(59, 130, 246, 0.8);
+      border-radius: var(--radius-sm);
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .viewfinder-text {
+      background: rgba(0, 0, 0, 0.7);
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: #93c5fd;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    /* Image Preview */
+    .preview-container {
+      margin-top: 18px;
+      display: none;
+      position: relative;
+    }
+
+    .preview-img {
+      width: 100%;
+      max-height: 280px;
+      object-fit: contain;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--surface-border);
+      background: #000;
+    }
+
+    .preview-clear-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    /* Model Selector */
+    .control-group {
+      margin-top: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    select, input[type="text"], input[type="number"] {
+      width: 100%;
+      background: rgba(11, 15, 25, 0.7);
+      border: 1px solid var(--surface-border);
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    select:focus, input:focus {
+      border-color: var(--primary);
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 12px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--primary-hover);
+      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      border: 1px solid var(--surface-border);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .btn-success {
+      background: var(--accent);
+      color: #064e3b;
+      font-weight: 700;
+    }
+
+    .btn-success:hover {
+      background: #059669;
+      color: white;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+    }
+
+    .btn-block {
+      width: 100%;
+    }
+
+    /* Verification Card */
+    .readings-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin: 20px 0;
+    }
+
+    .reading-box {
+      background: rgba(11, 15, 25, 0.8);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+    }
+
+    .reading-box.highlight {
+      border-color: var(--primary);
+      box-shadow: 0 0 16px rgba(59, 130, 246, 0.2);
+    }
+
+    .reading-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .reading-input {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 28px;
+      font-weight: 800;
+      text-align: center;
+      border: 1px solid transparent;
+      background: transparent;
+      color: #fff;
+      padding: 4px;
+      border-radius: 6px;
+    }
+
+    .reading-input:focus {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--primary);
+    }
+
+    .reading-unit {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .confidence-pill {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent);
+      align-self: center;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+
+    .category-banner {
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .cat-normal { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .cat-elevated { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .cat-stage1 { background: rgba(249, 115, 22, 0.15); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.3); }
+    .cat-stage2 { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+
+    /* Notice box */
+    .notice-box {
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      font-size: 12px;
+      color: #fbbf24;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    /* History Table */
+    .table-container {
+      overflow-x: auto;
+      margin-top: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th {
+      background: rgba(11, 15, 25, 0.6);
+      text-align: left;
+      padding: 12px 14px;
+      color: var(--text-muted);
+      font-weight: 600;
+      border-bottom: 1px solid var(--surface-border);
+    }
+
+    td {
+      padding: 14px;
+      border-bottom: 1px solid var(--surface-border);
+    }
+
+    tr:hover td {
+      background: var(--surface-hover);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .del-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    .del-btn:hover {
+      color: var(--danger);
+    }
+
+    /* Stats summary */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    @media (max-width: 768px) {
+      .stats-row {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      text-align: center;
+    }
+
+    .stat-val {
+      font-size: 24px;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      color: #fff;
+    }
+
+    .stat-lbl {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    footer {
+      border-top: 1px solid var(--surface-border);
+      padding: 24px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--surface);
+    }
+
+    .disclaimer-box {
+      max-width: 800px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+
+    /* Loader */
+    .loader {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 20px;
+      font-weight: 600;
+      color: var(--primary);
+    }
+
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid rgba(59, 130, 246, 0.2);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-content">
+      <div class="logo-container">
+        <div class="logo-icon">&#x2764;&#xfe0f;</div>
+        <div class="logo-text">
+          <h1>Blood Pressure Tracker</h1>
+          <p>Powered by SMART-BP YOLOv8s Edge Digitization</p>
+        </div>
+      </div>
+      <div class="engine-status-badge">
+        <div class="status-dot"></div>
+        <span id="engineStatusText">SMART-BP Active (CPU)</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Stats Row -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-val" id="statCount">0</div>
+        <div class="stat-lbl">Total Readings</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="statAvgSys">-</div>
+        <div class="stat-lbl">Average Systolic</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="statAvgDia">-</div>
+        <div class="stat-lbl">Average Diastolic</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="statAvgPul">-</div>
+        <div class="stat-lbl">Average Pulse</div>
+      </div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="grid-layout">
+      <!-- Input Panel -->
+      <div class="card">
+        <div class="card-title">
+          <span>&#x1f4f7;</span> Digitizer Capture
+        </div>
+        <div class="card-desc">Photograph your digital BP monitor screen or upload an existing image.</div>
+
+        <!-- Mode Tabs -->
+        <div class="tab-header">
+          <button class="tab-btn active" id="tabUpload" onclick="switchTab('upload')">&#x1f4c1; Upload Image</button>
+          <button class="tab-btn" id="tabCamera" onclick="switchTab('camera')">&#x1f4f8; Live Camera</button>
+        </div>
+
+        <!-- Upload View -->
+        <div id="uploadView">
+          <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+            <div class="dropzone-icon">&#x21e7;</div>
+            <div class="dropzone-text">Click or drag BP monitor photo here</div>
+            <div class="dropzone-subtext">Supports PNG, JPG, JPEG, BMP, WEBP</div>
+            <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="handleFileSelect(event)">
+          </div>
+
+          <div style="margin-top: 12px; display: flex; gap: 8px;">
+            <button class="btn btn-secondary btn-block" onclick="loadSampleImage()" style="font-size: 12px;">
+              &#x1f50e; Load Pretrained Test Monitor Image (120/80/72)
+            </button>
+          </div>
+        </div>
+
+        <!-- Camera View -->
+        <div id="cameraView" class="camera-box">
+          <div class="video-wrapper">
+            <video id="cameraVideo" autoplay playsinline muted></video>
+            <div class="viewfinder-overlay">
+              <div class="viewfinder-text">ALIGN MONITOR DISPLAY HERE</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-primary" style="flex: 2;" onclick="capturePhoto()">&#x1f4f7; Snap Photo</button>
+            <button class="btn btn-secondary" style="flex: 1;" onclick="stopCamera()">Close Camera</button>
+          </div>
+        </div>
+
+        <!-- Preview of selected image -->
+        <div class="preview-container" id="previewContainer">
+          <img id="previewImg" class="preview-img" alt="Monitor preview">
+          <button class="preview-clear-btn" onclick="clearSelectedImage()" title="Remove image">&times;</button>
+        </div>
+
+        <!-- Model Configuration -->
+        <div class="control-group">
+          <label for="variantSelect">Model Architecture / Weights:</label>
+          <select id="variantSelect">
+            <option value="SMART-BP+" selected>SMART-BP+ (Synthetic + Real Benchmark — Recommended)</option>
+            <option value="SMART-BP">SMART-BP (Real-World Benchmark)</option>
+          </select>
+        </div>
+
+        <div style="margin-top: 20px;">
+          <button class="btn btn-primary btn-block" id="scanBtn" onclick="runInference()" disabled>
+            <span>&#x26a1;</span> Scan & Transcribe Monitor
+          </button>
+        </div>
+
+        <div class="loader" id="loader">
+          <div class="spinner"></div>
+          <span id="loaderText">Running YOLOv8s 7-segment digit recognition on CPU...</span>
+        </div>
+      </div>
+
+      <!-- Verification Panel -->
+      <div class="card" id="verificationCard">
+        <div class="card-title">
+          <span>&#x2705;</span> Reading Verification
+        </div>
+        <div class="card-desc">Review and correct the extracted values before explicitly confirming and saving.</div>
+
+        <div id="emptyState" style="text-align: center; padding: 48px 20px; color: var(--text-muted);">
+          <div style="font-size: 42px; margin-bottom: 12px; opacity: 0.5;">&#x1fa7a;</div>
+          <div style="font-weight: 600;">No reading scanned yet</div>
+          <div style="font-size: 13px; margin-top: 4px;">Upload or capture a BP monitor photo on the left to begin.</div>
+        </div>
+
+        <div id="resultState" style="display: none;">
+          <!-- Detection overlay preview -->
+          <div style="margin-bottom: 16px;">
+            <label style="margin-bottom: 6px; display: block;">YOLOv8 Detection Overlay:</label>
+            <img id="annotatedImg" class="preview-img" style="max-height: 220px;" alt="Detection bounding boxes">
+          </div>
+
+          <!-- Category Banner -->
+          <div id="categoryBanner" class="category-banner cat-normal">
+            <span id="categoryText">Normal Blood Pressure</span>
+            <span style="font-size: 11px; opacity: 0.8;">AHA / ACC Reference</span>
+          </div>
+
+          <!-- Notice if unreadable or partial -->
+          <div class="notice-box" id="warningNotice" style="display: none;">
+            <span>&#x26a0;&#xfe0f;</span>
+            <span id="warningNoticeText">Please verify values carefully against your monitor display.</span>
+          </div>
+
+          <!-- Editable Readings -->
+          <div class="readings-grid">
+            <div class="reading-box highlight">
+              <div class="reading-label">Systolic (SYS)</div>
+              <input type="number" id="inputSys" class="reading-input" min="40" max="260" oninput="onValueEdit()">
+              <div class="reading-unit">mmHg</div>
+              <div class="confidence-pill" id="confSys">98% conf</div>
+            </div>
+
+            <div class="reading-box highlight">
+              <div class="reading-label">Diastolic (DIA)</div>
+              <input type="number" id="inputDia" class="reading-input" min="30" max="200" oninput="onValueEdit()">
+              <div class="reading-unit">mmHg</div>
+              <div class="confidence-pill" id="confDia">98% conf</div>
+            </div>
+
+            <div class="reading-box highlight">
+              <div class="reading-label">Pulse (PUL)</div>
+              <input type="number" id="inputPul" class="reading-input" min="25" max="240" oninput="onValueEdit()">
+              <div class="reading-unit">BPM</div>
+              <div class="confidence-pill" id="confPul">97% conf</div>
+            </div>
+          </div>
+
+          <!-- Notes -->
+          <div class="control-group">
+            <label for="inputNotes">Reading Notes (optional):</label>
+            <input type="text" id="inputNotes" placeholder="e.g., Morning reading, seated, left arm">
+          </div>
+
+          <div style="margin-top: 24px; display: flex; gap: 12px;">
+            <button class="btn btn-success" style="flex: 2;" onclick="confirmAndSave()">
+              <span>&#x1f4be;</span> Confirm & Save Reading
+            </button>
+            <button class="btn btn-secondary" style="flex: 1;" onclick="discardReading()">
+              Discard
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reading History Card -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+        <div>
+          <div class="card-title"><span>&#x1f4ca;</span> Blood Pressure History Log</div>
+          <div class="card-desc" style="margin-bottom: 0;">Verified personal blood pressure records.</div>
+        </div>
+        <button class="btn btn-secondary" onclick="exportCSV()" style="font-size: 13px;">
+          <span>&#x2913;</span> Export to CSV
+        </button>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Date & Time</th>
+              <th>Systolic</th>
+              <th>Diastolic</th>
+              <th>Pulse</th>
+              <th>Category</th>
+              <th>Model / Confidence</th>
+              <th>Notes</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody">
+            <tr>
+              <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 32px;">No saved readings yet. Scanned readings appear here once confirmed.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="disclaimer-box">
+      <strong>Medical Disclaimer:</strong> This Blood Pressure Tracker application is strictly intended for personal transcription and record-keeping. The automated SMART-BP model digitizes seven-segment LCD monitor numbers and does NOT offer medical diagnosis, clinical evaluation, or treatment recommendations. Always consult a qualified medical professional for health inquiries or high blood pressure management.
+    </div>
+  </footer>
+
+  <script>
+    let currentImageBlob = null;
+    let cameraStream = null;
+    let currentInferenceData = null;
+
+    // Switch between Upload and Camera tabs
+    function switchTab(tab) {
+      const isUpload = tab === 'upload';
+      document.getElementById('tabUpload').classList.toggle('active', isUpload);
+      document.getElementById('tabCamera').classList.toggle('active', !isUpload);
+      document.getElementById('uploadView').style.display = isUpload ? 'block' : 'none';
+      document.getElementById('cameraView').style.display = isUpload ? 'none' : 'flex';
+
+      if (!isUpload) {
+        startCamera();
+      } else {
+        stopCamera();
+      }
+    }
+
+    // Camera control
+    async function startCamera() {
+      try {
+        const constraints = {
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+        cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+        document.getElementById('cameraVideo').srcObject = cameraStream;
+      } catch (err) {
+        alert("Camera access denied or unavailable: " + err.message);
+        switchTab('upload');
+      }
+    }
+
+    function stopCamera() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+      }
+    }
+
+    function capturePhoto() {
+      const video = document.getElementById('cameraVideo');
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(blob => {
+        currentImageBlob = blob;
+        const url = URL.createObjectURL(blob);
+        showPreview(url);
+        stopCamera();
+        switchTab('upload');
+      }, 'image/jpeg', 0.95);
+    }
+
+    // File input handlers
+    function handleFileSelect(e) {
+      const file = e.target.files[0];
+      if (file) {
+        currentImageBlob = file;
+        const url = URL.createObjectURL(file);
+        showPreview(url);
+      }
+    }
+
+    const dropzone = document.getElementById('dropzone');
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => { dropzone.classList.remove('dragover'); });
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) {
+        currentImageBlob = e.dataTransfer.files[0];
+        showPreview(URL.createObjectURL(currentImageBlob));
+      }
+    });
+
+    function showPreview(url) {
+      document.getElementById('previewImg').src = url;
+      document.getElementById('previewContainer').style.display = 'block';
+      document.getElementById('scanBtn').disabled = false;
+    }
+
+    function clearSelectedImage() {
+      currentImageBlob = null;
+      document.getElementById('fileInput').value = '';
+      document.getElementById('previewContainer').style.display = 'none';
+      document.getElementById('scanBtn').disabled = true;
+    }
+
+    async function loadSampleImage() {
+      try {
+        const res = await fetch('/api/sample-image');
+        if (!res.ok) throw new Error("Could not load sample image");
+        const blob = await res.blob();
+        currentImageBlob = blob;
+        showPreview(URL.createObjectURL(blob));
+      } catch (err) {
+        alert("Sample image error: " + err.message);
+      }
+    }
+
+    // Run SMART-BP Inference
+    async function runInference() {
+      if (!currentImageBlob) return;
+
+      const loader = document.getElementById('loader');
+      const scanBtn = document.getElementById('scanBtn');
+      const variant = document.getElementById('variantSelect').value;
+
+      loader.style.display = 'flex';
+      scanBtn.disabled = true;
+
+      const formData = new FormData();
+      formData.append('image', currentImageBlob, 'monitor_photo.jpg');
+      formData.append('variant', variant);
+      formData.append('conf_threshold', '0.2');
+
+      try {
+        const resp = await fetch('/api/read-bp-image', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await resp.json();
+        currentInferenceData = data;
+        displayInferenceResults(data);
+      } catch (err) {
+        alert("Inference request failed: " + err.message);
+      } finally {
+        loader.style.display = 'none';
+        scanBtn.disabled = false;
+      }
+    }
+
+    // Display inference results in verification card
+    function displayInferenceResults(data) {
+      document.getElementById('emptyState').style.display = 'none';
+      document.getElementById('resultState').style.display = 'block';
+
+      const readings = data.readings || {};
+      document.getElementById('inputSys').value = readings.sys !== null ? readings.sys : '';
+      document.getElementById('inputDia').value = readings.dia !== null ? readings.dia : '';
+      document.getElementById('inputPul').value = readings.pul !== null ? readings.pul : '';
+
+      const conf = data.confidence || {};
+      const avgConfPercent = Math.round((conf.average || 0) * 100);
+      document.getElementById('confSys').innerText = `${avgConfPercent}% conf`;
+      document.getElementById('confDia').innerText = `${avgConfPercent}% conf`;
+      document.getElementById('confPul').innerText = `${avgConfPercent}% conf`;
+
+      if (data.annotated_image) {
+        document.getElementById('annotatedImg').src = 'data:image/jpeg;base64,' + data.annotated_image;
+        document.getElementById('annotatedImg').style.display = 'block';
+      } else {
+        document.getElementById('annotatedImg').style.display = 'none';
+      }
+
+      const warningNotice = document.getElementById('warningNotice');
+      if (data.status !== 'success') {
+        warningNotice.style.display = 'flex';
+        document.getElementById('warningNoticeText').innerText = data.message || "Partial or uncertain detection. Please verify each value.";
+      } else {
+        warningNotice.style.display = 'none';
+      }
+
+      updateCategoryBanner();
+    }
+
+    function onValueEdit() {
+      updateCategoryBanner();
+    }
+
+    function updateCategoryBanner() {
+      const sys = parseInt(document.getElementById('inputSys').value) || null;
+      const dia = parseInt(document.getElementById('inputDia').value) || null;
+      const banner = document.getElementById('categoryBanner');
+      const text = document.getElementById('categoryText');
+
+      banner.className = 'category-banner';
+      if (!sys || !dia) {
+        banner.classList.add('cat-elevated');
+        text.innerText = 'Incomplete Reading';
+        return;
+      }
+
+      if (sys < 120 && dia < 80) {
+        banner.classList.add('cat-normal');
+        text.innerText = 'Normal Blood Pressure (<120 / <80 mmHg)';
+      } else if (sys <= 129 && dia < 80) {
+        banner.classList.add('cat-elevated');
+        text.innerText = 'Elevated Blood Pressure (120–129 / <80 mmHg)';
+      } else if ((sys >= 130 && sys <= 139) || (dia >= 80 && dia <= 89)) {
+        banner.classList.add('cat-stage1');
+        text.innerText = 'Hypertension Stage 1 (130–139 or 80–89 mmHg)';
+      } else {
+        banner.classList.add('cat-stage2');
+        text.innerText = 'Hypertension Stage 2 (≥140 or ≥90 mmHg)';
+      }
+    }
+
+    // Explicit confirmation & save
+    async function confirmAndSave() {
+      const sys = parseInt(document.getElementById('inputSys').value);
+      const dia = parseInt(document.getElementById('inputDia').value);
+      const pul = parseInt(document.getElementById('inputPul').value) || null;
+      const notes = document.getElementById('inputNotes').value;
+
+      if (!sys || isNaN(sys) || !dia || isNaN(dia)) {
+        alert("Please provide valid numeric Systolic and Diastolic values before confirming.");
+        return;
+      }
+
+      const origReadings = currentInferenceData ? currentInferenceData.readings : {};
+      const payload = {
+        sys: sys,
+        dia: dia,
+        pulse: pul,
+        model_variant: currentInferenceData ? currentInferenceData.model_variant : 'SMART-BP+',
+        confidence: currentInferenceData && currentInferenceData.confidence ? currentInferenceData.confidence.average : 1.0,
+        original_sys: origReadings ? origReadings.sys : null,
+        original_dia: origReadings ? origReadings.dia : null,
+        original_pulse: origReadings ? origReadings.pul : null,
+        notes: notes
+      };
+
+      try {
+        const resp = await fetch('/api/confirm-reading', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const resData = await resp.json();
+        if (resp.ok) {
+          alert("Reading confirmed and recorded to history!");
+          discardReading();
+          clearSelectedImage();
+          loadHistory();
+          loadStats();
+        } else {
+          alert("Error saving reading: " + (resData.detail || "Server error"));
+        }
+      } catch (err) {
+        alert("Failed to confirm reading: " + err.message);
+      }
+    }
+
+    function discardReading() {
+      currentInferenceData = null;
+      document.getElementById('resultState').style.display = 'none';
+      document.getElementById('emptyState').style.display = 'block';
+    }
+
+    // History and Stats loading
+    async function loadHistory() {
+      try {
+        const resp = await fetch('/api/history');
+        const data = await resp.json();
+        const tbody = document.getElementById('historyTableBody');
+        tbody.innerHTML = '';
+
+        if (!data.readings || data.readings.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 32px;">No saved readings yet.</td></tr>';
+          return;
+        }
+
+        data.readings.forEach(r => {
+          const tr = document.createElement('tr');
+          let catClass = 'cat-normal';
+          if (r.category === 'Elevated') catClass = 'cat-elevated';
+          else if (r.category === 'Hypertension Stage 1') catClass = 'cat-stage1';
+          else if (r.category === 'Hypertension Stage 2') catClass = 'cat-stage2';
+
+          const correctedBadge = r.was_corrected ? '<span style="font-size:10px; color:#f59e0b; margin-left:4px;">(edited)</span>' : '';
+          const confText = r.confidence ? `${Math.round(r.confidence * 100)}%` : 'Manual';
+
+          tr.innerHTML = `
+            <td style="font-family: monospace;">${r.timestamp}</td>
+            <td><strong>${r.sys}</strong> mmHg</td>
+            <td><strong>${r.dia}</strong> mmHg</td>
+            <td>${r.pulse ? r.pulse + ' BPM' : '-'}</td>
+            <td><span class="badge ${catClass}">${r.category}</span></td>
+            <td>${r.model_variant} <span style="font-size:11px; opacity:0.7;">(${confText})</span> ${correctedBadge}</td>
+            <td>${r.notes || '-'}</td>
+            <td><button class="del-btn" onclick="deleteItem(${r.id})" title="Delete entry">&times;</button></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error("Error loading history:", err);
+      }
+    }
+
+    async function loadStats() {
+      try {
+        const resp = await fetch('/api/stats');
+        const s = await resp.json();
+        document.getElementById('statCount').innerText = s.total_count || 0;
+        document.getElementById('statAvgSys').innerText = s.avg_sys ? `${s.avg_sys} mmHg` : '-';
+        document.getElementById('statAvgDia').innerText = s.avg_dia ? `${s.avg_dia} mmHg` : '-';
+        document.getElementById('statAvgPul').innerText = s.avg_pulse ? `${s.avg_pulse} BPM` : '-';
+      } catch (err) {
+        console.error("Error loading stats:", err);
+      }
+    }
+
+    async function deleteItem(id) {
+      if (!confirm("Are you sure you want to delete this recorded reading?")) return;
+      try {
+        await fetch(`/api/history/${id}`, { method: 'DELETE' });
+        loadHistory();
+        loadStats();
+      } catch (err) {
+        alert("Delete failed: " + err.message);
+      }
+    }
+
+    function exportCSV() {
+      fetch('/api/history?limit=500')
+        .then(r => r.json())
+        .then(data => {
+          if (!data.readings || data.readings.length === 0) {
+            alert("No readings available to export.");
+            return;
+          }
+          let csv = "ID,Timestamp,Systolic,Diastolic,Pulse,Category,Model,Confidence,Notes\n";
+          data.readings.forEach(r => {
+            csv += `"${r.id}","${r.timestamp}","${r.sys}","${r.dia}","${r.pulse || ''}","${r.category}","${r.model_variant}","${r.confidence || ''}","${(r.notes || '').replace(/"/g, '""')}"\n`;
+          });
+          const blob = new Blob([csv], { type: 'text/csv' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `blood_pressure_history_${new Date().toISOString().slice(0,10)}.csv`;
+          a.click();
+        });
+    }
+
+    // Health check on startup
+    fetch('/api/health')
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'healthy') {
+          document.getElementById('engineStatusText').innerText = `SMART-BP Active (${d.device})`;
+        }
+      });
+
+    // Initialize data
+    loadHistory();
+    loadStats();
+  </script>
+</body>
+</html>
