@@ -6,7 +6,7 @@ services:
     name: smart-bp-tracker
     runtime: docker
     dockerfilePath: Dockerfile
-    plan: starter # Change to free if using Supabase cloud database
+    plan: free # Render Free Tier ($0/month)
     region: oregon # or ohio, frankfurt, singapore
     healthCheckPath: /api/health
     autoDeploy: true
@@ -26,16 +26,16 @@ services:
         value: personal_owner
       # - key: CORS_ORIGINS
       #   value: https://smart-bp-tracker.onrender.com
-      # Optional: Cloud Database configuration via Supabase
+      # Optional: Cloud Database configuration via Supabase (100% Free tier)
       # - key: SUPABASE_URL
       #   sync: false
       # - key: SUPABASE_SERVICE_ROLE_KEY
       #   sync: false
 
-    # Persistent Disk configuration (Recommended for SQLite persistence on Render)
-    # Note: Disks require a paid instance type (Starter $7/mo + $0.25/GB disk).
-    # If using Render Free Tier, remove the disk block below and use Supabase instead.
-    disk:
-      name: bp-data
-      mountPath: /var/data
-      sizeGB: 1
+    # NOTE: Render Free Tier ($0) does not support persistent disks.
+    # On the Free tier, SQLite stores data in /var/data/bp_tracker.db (or connect Supabase for free persistent cloud storage).
+    # If upgrading to a paid Render Starter plan ($7/mo), you can uncomment the disk block below:
+    # disk:
+    #   name: bp-data
+    #   mountPath: /var/data
+    #   sizeGB: 1

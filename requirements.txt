@@ -4,7 +4,7 @@
 torch>=2.2.0
 torchvision>=0.17.0
 ultralytics>=8.2.0
-opencv-python-headless>=4.8.0
+opencv-python-headless==4.10.0.84
 fastapi>=0.110.0
 uvicorn[standard]>=0.28.0
 python-multipart>=0.0.9
