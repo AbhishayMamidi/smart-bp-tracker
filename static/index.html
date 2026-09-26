@@ -619,6 +619,60 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+
+    /* Access Gate Modal Styles */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(11, 15, 25, 0.88);
+      backdrop-filter: blur(10px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      max-width: 440px;
+      width: 100%;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+      animation: modalFadeIn 0.25s ease-out;
+    }
+
+    @keyframes modalFadeIn {
+      from { opacity: 0; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .modal-icon {
+      font-size: 28px;
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .auth-badge-unlocked {
+      border-color: rgba(16, 185, 129, 0.4) !important;
+      background: rgba(16, 185, 129, 0.1) !important;
+      color: #34d399 !important;
+    }
   </style>
 </head>
 <body>
@@ -632,9 +686,14 @@
           <p>Powered by SMART-BP YOLOv8s Edge Digitization</p>
         </div>
       </div>
-      <div class="engine-status-badge">
-        <div class="status-dot"></div>
-        <span id="engineStatusText">SMART-BP Active (CPU)</span>
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <div class="engine-status-badge">
+          <div class="status-dot"></div>
+          <span id="engineStatusText">SMART-BP Active (CPU)</span>
+        </div>
+        <button id="authBtn" class="btn btn-secondary" onclick="handleAuthClick()" style="padding: 6px 14px; font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+          <span id="authIcon">&#x1f512;</span> <span id="authText">Locked</span>
+        </button>
       </div>
     </div>
   </header>
@@ -848,12 +907,209 @@
     </div>
   </footer>
 
+  <!-- Access Gate Modal for Private Deployment Security -->
+  <div id="authModal" class="modal-backdrop" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-icon">&#x1f510;</div>
+        <div>
+          <h2 style="font-size: 18px; font-weight: 700;">Personal Access Gate</h2>
+          <p style="font-size: 12px; color: var(--text-muted);">Enter your private server passkey to access health records.</p>
+        </div>
+      </div>
+
+      <div id="authErrorNotice" class="notice-box" style="display: none; background: rgba(239, 68, 68, 0.15); border-color: var(--danger); color: #fca5a5; margin-bottom: 16px;">
+        <span>&#x26a0;&#xfe0f;</span>
+        <span id="authErrorMsg">Invalid access token.</span>
+      </div>
+
+      <div class="control-group" style="margin-bottom: 16px;">
+        <label for="authTokenInput">Access Passkey / Token:</label>
+        <div style="position: relative;">
+          <input type="password" id="authTokenInput" placeholder="Enter APP_ACCESS_TOKEN" style="width: 100%; padding-right: 44px;" onkeydown="if(event.key==='Enter') submitAuthToken()">
+          <button type="button" onclick="togglePassVisibility()" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 15px;" title="Toggle visibility">&#x1f441;&#xfe0f;</button>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 20px;">
+        <input type="checkbox" id="rememberToken" checked style="cursor: pointer; width: 16px; height: 16px;">
+        <label for="rememberToken" style="font-size: 13px; color: var(--text-muted); cursor: pointer; margin-bottom: 0;">Remember passkey on this browser</label>
+      </div>
+
+      <div style="display: flex; gap: 10px;">
+        <button class="btn btn-primary btn-block" onclick="submitAuthToken()" id="submitAuthBtn">
+          Unlock Dashboard
+        </button>
+      </div>
+
+      <div style="margin-top: 16px; font-size: 11px; color: var(--text-muted); text-align: center;">
+        Your passkey is stored securely in browser storage and never exposed in URLs or public code.
+      </div>
+    </div>
+  </div>
+
   <script>
     let currentImageBlob = null;
     let cameraStream = null;
     let currentInferenceData = null;
 
-    // Switch between Upload and Camera tabs
+    // ========================================================================
+    // Secure Token Management & Auth Helpers
+    // ========================================================================
+
+    const TOKEN_KEY = "bp_tracker_access_token";
+
+    function getStoredToken() {
+      return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY) || "";
+    }
+
+    function setStoredToken(token, remember) {
+      if (remember) {
+        localStorage.setItem(TOKEN_KEY, token);
+        sessionStorage.removeItem(TOKEN_KEY);
+      } else {
+        sessionStorage.setItem(TOKEN_KEY, token);
+        localStorage.removeItem(TOKEN_KEY);
+      }
+    }
+
+    function clearStoredToken() {
+      sessionStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(TOKEN_KEY);
+    }
+
+    function updateAuthUI(isAuthenticated) {
+      const authBtn = document.getElementById("authBtn");
+      const authIcon = document.getElementById("authIcon");
+      const authText = document.getElementById("authText");
+
+      if (isAuthenticated) {
+        authBtn.classList.add("auth-badge-unlocked");
+        authIcon.innerHTML = "&#x1f513;";
+        authText.innerText = "Unlocked";
+        authBtn.title = "Click to lock dashboard / log out";
+      } else {
+        authBtn.classList.remove("auth-badge-unlocked");
+        authIcon.innerHTML = "&#x1f512;";
+        authText.innerText = "Locked";
+        authBtn.title = "Click to enter access passkey";
+      }
+    }
+
+    function showAuthModal(errorMsg = "") {
+      const modal = document.getElementById("authModal");
+      const errBox = document.getElementById("authErrorNotice");
+      const errMsg = document.getElementById("authErrorMsg");
+      const input = document.getElementById("authTokenInput");
+
+      if (errorMsg) {
+        errMsg.innerText = errorMsg;
+        errBox.style.display = "flex";
+      } else {
+        errBox.style.display = "none";
+      }
+
+      input.value = getStoredToken();
+      modal.style.display = "flex";
+      setTimeout(() => input.focus(), 100);
+    }
+
+    function hideAuthModal() {
+      document.getElementById("authModal").style.display = "none";
+    }
+
+    function togglePassVisibility() {
+      const input = document.getElementById("authTokenInput");
+      input.type = input.type === "password" ? "text" : "password";
+    }
+
+    function handleAuthClick() {
+      const token = getStoredToken();
+      if (token) {
+        if (confirm("Lock dashboard and sign out on this device?")) {
+          clearStoredToken();
+          updateAuthUI(false);
+          // Clear current tables & stats from view
+          document.getElementById("historyTableBody").innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 32px;">Locked. Enter passkey to view records.</td></tr>';
+          document.getElementById("statCount").innerText = "-";
+          document.getElementById("statAvgSys").innerText = "-";
+          document.getElementById("statAvgDia").innerText = "-";
+          document.getElementById("statAvgPul").innerText = "-";
+          showAuthModal();
+        }
+      } else {
+        showAuthModal();
+      }
+    }
+
+    async function submitAuthToken() {
+      const input = document.getElementById("authTokenInput");
+      const remember = document.getElementById("rememberToken").checked;
+      const token = input.value.trim();
+
+      if (!token) {
+        showAuthModal("Please enter your server access passkey.");
+        return;
+      }
+
+      const submitBtn = document.getElementById("submitAuthBtn");
+      submitBtn.disabled = true;
+      submitBtn.innerText = "Verifying...";
+
+      try {
+        const resp = await fetch("/api/auth/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: token })
+        });
+
+        if (resp.ok) {
+          setStoredToken(token, remember);
+          hideAuthModal();
+          updateAuthUI(true);
+          loadHistory();
+          loadStats();
+        } else {
+          showAuthModal("Invalid access passkey. Please check your APP_ACCESS_TOKEN configuration.");
+        }
+      } catch (err) {
+        showAuthModal("Network error connecting to server: " + err.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = "Unlock Dashboard";
+      }
+    }
+
+    // Authenticated Fetch wrapper: automatically injects X-Access-Token and handles 401
+    async function apiFetch(url, options = {}) {
+      const token = getStoredToken();
+      if (!token) {
+        updateAuthUI(false);
+        showAuthModal("Access passkey required to perform this action.");
+        throw new Error("Unauthorized: Passkey required.");
+      }
+
+      options.headers = options.headers || {};
+      if (options.headers instanceof Headers) {
+        options.headers.set("X-Access-Token", token);
+      } else {
+        options.headers["X-Access-Token"] = token;
+      }
+
+      const response = await fetch(url, options);
+      if (response.status === 401) {
+        clearStoredToken();
+        updateAuthUI(false);
+        showAuthModal("Session expired or invalid access passkey. Please re-enter.");
+        throw new Error("Unauthorized: Invalid token.");
+      }
+      return response;
+    }
+
+    // ========================================================================
+    // UI Tabs & Camera Handlers
+    // ========================================================================
+
     function switchTab(tab) {
       const isUpload = tab === 'upload';
       document.getElementById('tabUpload').classList.toggle('active', isUpload);
@@ -868,7 +1124,6 @@
       }
     }
 
-    // Camera control
     async function startCamera() {
       try {
         const constraints = {
@@ -910,7 +1165,6 @@
       }, 'image/jpeg', 0.95);
     }
 
-    // File input handlers
     function handleFileSelect(e) {
       const file = e.target.files[0];
       if (file) {
@@ -947,17 +1201,22 @@
 
     async function loadSampleImage() {
       try {
-        const res = await fetch('/api/sample-image');
+        const res = await apiFetch('/api/sample-image');
         if (!res.ok) throw new Error("Could not load sample image");
         const blob = await res.blob();
         currentImageBlob = blob;
         showPreview(URL.createObjectURL(blob));
       } catch (err) {
-        alert("Sample image error: " + err.message);
+        if (!err.message.includes("Unauthorized")) {
+          alert("Sample image error: " + err.message);
+        }
       }
     }
 
-    // Run SMART-BP Inference
+    // ========================================================================
+    // Model Inference & Reading Verification
+    // ========================================================================
+
     async function runInference() {
       if (!currentImageBlob) return;
 
@@ -974,7 +1233,7 @@
       formData.append('conf_threshold', '0.2');
 
       try {
-        const resp = await fetch('/api/read-bp-image', {
+        const resp = await apiFetch('/api/read-bp-image', {
           method: 'POST',
           body: formData
         });
@@ -982,14 +1241,15 @@
         currentInferenceData = data;
         displayInferenceResults(data);
       } catch (err) {
-        alert("Inference request failed: " + err.message);
+        if (!err.message.includes("Unauthorized")) {
+          alert("Inference request failed: " + err.message);
+        }
       } finally {
         loader.style.display = 'none';
         scanBtn.disabled = false;
       }
     }
 
-    // Display inference results in verification card
     function displayInferenceResults(data) {
       document.getElementById('emptyState').style.display = 'none';
       document.getElementById('resultState').style.display = 'block';
@@ -1055,7 +1315,6 @@
       }
     }
 
-    // Explicit confirmation & save
     async function confirmAndSave() {
       const sys = parseInt(document.getElementById('inputSys').value);
       const dia = parseInt(document.getElementById('inputDia').value);
@@ -1081,7 +1340,7 @@
       };
 
       try {
-        const resp = await fetch('/api/confirm-reading', {
+        const resp = await apiFetch('/api/confirm-reading', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -1097,7 +1356,9 @@
           alert("Error saving reading: " + (resData.detail || "Server error"));
         }
       } catch (err) {
-        alert("Failed to confirm reading: " + err.message);
+        if (!err.message.includes("Unauthorized")) {
+          alert("Failed to confirm reading: " + err.message);
+        }
       }
     }
 
@@ -1107,16 +1368,19 @@
       document.getElementById('emptyState').style.display = 'block';
     }
 
-    // History and Stats loading
+    // ========================================================================
+    // History & Analytics (Personal Records)
+    // ========================================================================
+
     async function loadHistory() {
       try {
-        const resp = await fetch('/api/history');
+        const resp = await apiFetch('/api/history');
         const data = await resp.json();
         const tbody = document.getElementById('historyTableBody');
         tbody.innerHTML = '';
 
         if (!data.readings || data.readings.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 32px;">No saved readings yet.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 32px;">No saved readings yet. Scanned readings appear here once confirmed.</td></tr>';
           return;
         }
 
@@ -1149,7 +1413,7 @@
 
     async function loadStats() {
       try {
-        const resp = await fetch('/api/stats');
+        const resp = await apiFetch('/api/stats');
         const s = await resp.json();
         document.getElementById('statCount').innerText = s.total_count || 0;
         document.getElementById('statAvgSys').innerText = s.avg_sys ? `${s.avg_sys} mmHg` : '-';
@@ -1163,16 +1427,18 @@
     async function deleteItem(id) {
       if (!confirm("Are you sure you want to delete this recorded reading?")) return;
       try {
-        await fetch(`/api/history/${id}`, { method: 'DELETE' });
+        await apiFetch(`/api/history/${id}`, { method: 'DELETE' });
         loadHistory();
         loadStats();
       } catch (err) {
-        alert("Delete failed: " + err.message);
+        if (!err.message.includes("Unauthorized")) {
+          alert("Delete failed: " + err.message);
+        }
       }
     }
 
     function exportCSV() {
-      fetch('/api/history?limit=500')
+      apiFetch('/api/history?limit=500')
         .then(r => r.json())
         .then(data => {
           if (!data.readings || data.readings.length === 0) {
@@ -1189,21 +1455,61 @@
           a.href = url;
           a.download = `blood_pressure_history_${new Date().toISOString().slice(0,10)}.csv`;
           a.click();
+        })
+        .catch(err => {
+          if (!err.message.includes("Unauthorized")) {
+            alert("CSV Export error: " + err.message);
+          }
         });
     }
 
-    // Health check on startup
-    fetch('/api/health')
-      .then(r => r.json())
-      .then(d => {
-        if (d.status === 'healthy') {
-          document.getElementById('engineStatusText').innerText = `SMART-BP Active (${d.device})`;
-        }
-      });
+    // ========================================================================
+    // App Initialization & Auth Verification
+    // ========================================================================
 
-    // Initialize data
-    loadHistory();
-    loadStats();
+    async function initApp() {
+      // 1. Health status (public probe)
+      try {
+        const healthRes = await fetch('/api/health');
+        if (healthRes.ok) {
+          const d = await healthRes.json();
+          if (d.status === 'healthy') {
+            document.getElementById('engineStatusText').innerText = `SMART-BP Active (${d.device})`;
+          }
+        }
+      } catch (e) {
+        console.warn("Could not reach health check:", e);
+      }
+
+      // 2. Auth check
+      const token = getStoredToken();
+      if (!token) {
+        updateAuthUI(false);
+        showAuthModal();
+        return;
+      }
+
+      try {
+        const verifyRes = await fetch('/api/auth/status', {
+          headers: { 'X-Access-Token': token }
+        });
+        const statusData = await verifyRes.json();
+        if (statusData.authenticated) {
+          updateAuthUI(true);
+          loadHistory();
+          loadStats();
+        } else {
+          clearStoredToken();
+          updateAuthUI(false);
+          showAuthModal("Saved passkey is no longer valid. Please enter current passkey.");
+        }
+      } catch (e) {
+        updateAuthUI(false);
+        showAuthModal("Could not verify passkey with server.");
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", initApp);
   </script>
 </body>
 </html>

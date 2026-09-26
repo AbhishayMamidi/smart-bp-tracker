@@ -18,12 +18,18 @@ services:
         value: 20
       - key: DATABASE_PATH
         value: /var/data/bp_tracker.db
-      # Optional: Set these in Render Dashboard for Cloud Database & Security
+      # Security & Access Control
+      # Set APP_ACCESS_TOKEN in Render Dashboard to establish your private passkey
+      - key: APP_ACCESS_TOKEN
+        generateValue: true # Render automatically generates a secure random 32-character key if not set!
+      - key: BP_USER_ID
+        value: personal_owner
+      # - key: CORS_ORIGINS
+      #   value: https://smart-bp-tracker.onrender.com
+      # Optional: Cloud Database configuration via Supabase
       # - key: SUPABASE_URL
       #   sync: false
       # - key: SUPABASE_SERVICE_ROLE_KEY
-      #   sync: false
-      # - key: APP_ACCESS_TOKEN
       #   sync: false
 
     # Persistent Disk configuration (Recommended for SQLite persistence on Render)

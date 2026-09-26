@@ -14,6 +14,9 @@ logger = logging.getLogger("bp_tracker.database")
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
+# Configurable user/owner identifier for scoping health data
+BP_USER_ID = os.environ.get("BP_USER_ID", "personal_owner").strip() or "personal_owner"
+
 
 def get_db_path() -> str:
     """
@@ -38,8 +41,13 @@ if SUPABASE_URL and SUPABASE_KEY:
         logger.warning(f"Failed to initialize Supabase client: {e}. Operating in SQLite mode.")
 
 
+def is_supabase_enabled() -> bool:
+    """Returns True if a remote Supabase client is connected."""
+    return _supabase_client is not None
+
+
 def init_db():
-    """Initializes the SQLite database schema if not present."""
+    """Initializes the SQLite database schema if not present, and applies migrations."""
     db_file = get_db_path()
     parent_dir = os.path.dirname(os.path.abspath(db_file))
     if parent_dir and not os.path.exists(parent_dir):
@@ -50,6 +58,7 @@ def init_db():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS bp_readings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT DEFAULT 'personal_owner',
                 timestamp TEXT NOT NULL,
                 sys INTEGER NOT NULL,
                 dia INTEGER NOT NULL,
@@ -65,6 +74,16 @@ def init_db():
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        conn.commit()
+
+        # Check and migrate existing databases that might lack the user_id column
+        cursor.execute("PRAGMA table_info(bp_readings)")
+        cols = [c[1] for c in cursor.fetchall()]
+        if "user_id" not in cols:
+            cursor.execute("ALTER TABLE bp_readings ADD COLUMN user_id TEXT DEFAULT 'personal_owner'")
+            conn.commit()
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_bp_readings_user_time ON bp_readings (user_id, timestamp DESC)")
         conn.commit()
     logger.info(f"Database initialized at {db_file}")
 
@@ -94,13 +113,16 @@ def save_reading(
     original_dia: Optional[int] = None,
     original_pulse: Optional[int] = None,
     notes: str = "",
-    custom_timestamp: Optional[str] = None
+    custom_timestamp: Optional[str] = None,
+    user_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Saves a confirmed BP reading to the database.
     Only called upon explicit user confirmation!
+    Scoped strictly to the authorized personal owner.
     """
     init_db()
+    active_user = (user_id or BP_USER_ID).strip() or "personal_owner"
     now_iso = custom_timestamp or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     category = calculate_category(sys, dia)
 
@@ -118,12 +140,12 @@ def save_reading(
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO bp_readings (
-                timestamp, sys, dia, pulse, category,
+                user_id, timestamp, sys, dia, pulse, category,
                 model_variant, confidence, original_sys, original_dia,
                 original_pulse, was_corrected, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            now_iso, sys, dia, pulse, category,
+            active_user, now_iso, sys, dia, pulse, category,
             model_variant, confidence, original_sys, original_dia,
             original_pulse, was_corrected, notes
         ))
@@ -132,6 +154,7 @@ def save_reading(
 
     record = {
         "id": reading_id,
+        "user_id": active_user,
         "timestamp": now_iso,
         "sys": sys,
         "dia": dia,
@@ -146,10 +169,11 @@ def save_reading(
         "notes": notes
     }
 
-    # Cloud Supabase synchronization if configured
+    # Cloud Supabase synchronization scoped to authenticated user
     if _supabase_client:
         try:
             _supabase_client.table("bp_readings").insert({
+                "user_id": active_user,
                 "timestamp": now_iso,
                 "sys": sys,
                 "dia": dia,
@@ -160,18 +184,24 @@ def save_reading(
                 "notes": notes,
                 "was_corrected": bool(was_corrected)
             }).execute()
-            logger.info("Reading synced to Supabase successfully.")
+            logger.info("Reading synced to Supabase successfully with user scoping.")
         except Exception as e:
             logger.warning(f"Could not sync reading to Supabase: {e}")
 
     return record
 
 
-def get_all_readings(limit: int = 100) -> List[Dict[str, Any]]:
-    """Retrieves reading history sorted newest first."""
+def get_all_readings(limit: int = 100, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Retrieves reading history scoped to the authorized user, sorted newest first."""
+    active_user = (user_id or BP_USER_ID).strip() or "personal_owner"
     if _supabase_client:
         try:
-            response = _supabase_client.table("bp_readings").select("*").order("timestamp", desc=True).limit(limit).execute()
+            response = _supabase_client.table("bp_readings")\
+                .select("*")\
+                .eq("user_id", active_user)\
+                .order("timestamp", desc=True)\
+                .limit(limit)\
+                .execute()
             if response.data is not None:
                 return response.data
         except Exception as e:
@@ -184,18 +214,24 @@ def get_all_readings(limit: int = 100) -> List[Dict[str, Any]]:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT * FROM bp_readings
+            WHERE user_id = ? OR user_id IS NULL
             ORDER BY timestamp DESC
             LIMIT ?
-        """, (limit,))
+        """, (active_user, limit))
         rows = cursor.fetchall()
         return [dict(r) for r in rows]
 
 
-def delete_reading(reading_id: int) -> bool:
-    """Deletes a reading by ID."""
+def delete_reading(reading_id: int, user_id: Optional[str] = None) -> bool:
+    """Deletes a reading by ID, strictly verifying ownership."""
+    active_user = (user_id or BP_USER_ID).strip() or "personal_owner"
     if _supabase_client:
         try:
-            _supabase_client.table("bp_readings").delete().eq("id", reading_id).execute()
+            _supabase_client.table("bp_readings")\
+                .delete()\
+                .eq("id", reading_id)\
+                .eq("user_id", active_user)\
+                .execute()
         except Exception as e:
             logger.warning(f"Supabase delete error: {e}")
 
@@ -203,14 +239,17 @@ def delete_reading(reading_id: int) -> bool:
     db_file = get_db_path()
     with sqlite3.connect(db_file) as conn:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM bp_readings WHERE id = ?", (reading_id,))
+        cursor.execute("""
+            DELETE FROM bp_readings
+            WHERE id = ? AND (user_id = ? OR user_id IS NULL)
+        """, (reading_id, active_user))
         conn.commit()
         return cursor.rowcount > 0
 
 
-def get_stats() -> Dict[str, Any]:
-    """Calculates summary statistics."""
-    readings = get_all_readings(limit=500)
+def get_stats(user_id: Optional[str] = None) -> Dict[str, Any]:
+    """Calculates summary statistics scoped to the authorized user."""
+    readings = get_all_readings(limit=500, user_id=user_id)
     if not readings:
         return {"total_count": 0, "avg_sys": None, "avg_dia": None, "avg_pulse": None}
 
