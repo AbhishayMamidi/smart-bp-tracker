@@ -7,7 +7,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/static/chart.umd.js"></script>
+  <script>
+    if (typeof Chart === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>');
+    }
+  </script>
   <style>
     :root {
       --bg: #0b0f19;
@@ -497,16 +502,25 @@
       margin-bottom: 16px;
     }
 
-    /* History Table */
+    /* History Table & Responsive Table Layout */
     .table-container {
+      width: 100%;
       overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
       margin-top: 16px;
+      border-radius: 8px;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
       font-size: 13px;
+    }
+
+    /* History table minimum width prevents squishing columns on small/mobile screens and enables smooth horizontal scroll */
+    .history-table {
+      width: 100%;
+      min-width: 920px;
     }
 
     th {
@@ -516,6 +530,7 @@
       color: var(--text-muted);
       font-weight: 600;
       border-bottom: 1px solid var(--surface-border);
+      white-space: nowrap;
     }
 
     td {
@@ -527,12 +542,49 @@
       background: var(--surface-hover);
     }
 
+    /* Dedicated SYS, DIA, PUL Columns (100–120px, Centered, No-Wrap) */
+    .col-bp,
+    .cell-bp {
+      min-width: 110px;
+      width: 118px;
+      text-align: center !important;
+      white-space: nowrap !important;
+      font-variant-numeric: tabular-nums;
+    }
+
+    th.col-bp {
+      text-align: center !important;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+
+    td.cell-bp strong {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    td.cell-bp .bp-unit {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-left: 3px;
+      font-weight: 400;
+      display: inline-block;
+    }
+
+    .col-center,
+    .cell-center {
+      text-align: center !important;
+      white-space: nowrap !important;
+    }
+
     .badge {
       display: inline-block;
       padding: 4px 8px;
       border-radius: 999px;
       font-size: 11px;
       font-weight: 600;
+      white-space: nowrap;
     }
 
     .del-btn {
@@ -558,6 +610,13 @@
     @media (max-width: 768px) {
       .stats-row {
         grid-template-columns: repeat(2, 1fr);
+      }
+      .table-container {
+        border: 1px solid var(--surface-border);
+      }
+      .history-table,
+      .batch-review-table {
+        min-width: 920px; /* Assures horizontal scroll on mobile phones without column shrinkage */
       }
     }
 
@@ -748,9 +807,24 @@
     }
 
     /* Batch Review Table Styles */
+    .batch-review-table {
+      width: 100%;
+      min-width: 920px;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
     .batch-review-table th, .batch-review-table td {
       vertical-align: middle;
       padding: 10px 12px;
+    }
+
+    .batch-review-table th.col-bp,
+    .batch-review-table td.cell-bp {
+      min-width: 110px;
+      width: 118px;
+      text-align: center !important;
+      white-space: nowrap !important;
     }
 
     .batch-table-thumb {
@@ -784,7 +858,7 @@
     }
 
     .table-num-input {
-      width: 70px;
+      width: 82px;
       text-align: center;
       font-family: 'JetBrains Mono', monospace;
       font-size: 14px;
@@ -794,6 +868,7 @@
       border: 1px solid var(--surface-border);
       color: var(--text);
       border-radius: 6px;
+      white-space: nowrap;
     }
 
     .table-num-input:focus {
@@ -879,6 +954,9 @@
           <div class="status-dot"></div>
           <span id="engineStatusText">SMART-BP Active (CPU)</span>
         </div>
+        <a id="groundTruthStudioLink" href="/labelingsvg" class="btn btn-secondary" style="padding: 6px 14px; font-size: 13px; text-decoration: none; display: flex; align-items: center; gap: 6px;">
+          <span>&#x1f3f7;&#xfe0f;</span> <span>Ground-Truth Studio</span>
+        </a>
         <button id="authBtn" class="btn btn-secondary" onclick="handleAuthClick()" style="padding: 6px 14px; font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer;">
           <span id="authIcon">&#x1f512;</span> <span id="authText">Locked</span>
         </button>
@@ -1135,14 +1213,14 @@
             <tr>
               <th style="width: 40px; text-align: center;"><input type="checkbox" id="batchSelectAll" checked onchange="toggleSelectAllBatch(this.checked)" style="cursor: pointer;"></th>
               <th style="width: 70px;">Photo</th>
-              <th>Capture Date & Time</th>
-              <th style="width: 90px; text-align: center;">SYS</th>
-              <th style="width: 90px; text-align: center;">DIA</th>
-              <th style="width: 90px; text-align: center;">PUL</th>
-              <th>Category</th>
-              <th>Status / Duplicate</th>
-              <th>Notes</th>
-              <th style="width: 40px; text-align: center;">Remove</th>
+              <th style="min-width: 180px;">Capture Date & Time</th>
+              <th class="col-bp col-sys">SYS</th>
+              <th class="col-bp col-dia">DIA</th>
+              <th class="col-bp col-pul">PUL</th>
+              <th style="min-width: 120px;">Category</th>
+              <th style="min-width: 130px;">Status / Duplicate</th>
+              <th style="min-width: 100px;">Notes</th>
+              <th class="col-center" style="width: 50px;">Remove</th>
             </tr>
           </thead>
           <tbody id="batchReviewTableBody">
@@ -1245,23 +1323,24 @@
         </div>
       </div>
 
-      <div class="table-container">
-        <table>
+      <div class="table-container history-table-container">
+        <table id="historyTable" class="history-table">
           <thead>
             <tr>
-              <th>Date & Time</th>
-              <th>Systolic</th>
-              <th>Diastolic</th>
-              <th>Pulse</th>
-              <th>Category</th>
-              <th>Model / Confidence</th>
-              <th>Notes</th>
-              <th>Action</th>
+              <th style="min-width: 160px;">Date &amp; Time</th>
+              <th class="col-bp col-sys">Systolic (SYS)</th>
+              <th class="col-bp col-dia">Diastolic (DIA)</th>
+              <th class="col-bp col-pul">Pulse (PUL)</th>
+              <th style="min-width: 120px;">Category</th>
+              <th style="min-width: 130px;">Model / Confidence</th>
+              <th style="min-width: 100px;">Notes</th>
+              <th class="col-center" style="width: 80px;">Photo</th>
+              <th class="col-center" style="width: 60px;">Action</th>
             </tr>
           </thead>
           <tbody id="historyTableBody">
             <tr>
-              <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 32px;">No saved readings yet. Scanned readings appear here once confirmed.</td>
+              <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 32px;">No saved readings yet. Scanned readings appear here once confirmed.</td>
             </tr>
           </tbody>
         </table>
@@ -1361,6 +1440,12 @@
         authIcon.innerHTML = "&#x1f512;";
         authText.innerText = "Locked";
         authBtn.title = "Click to enter access passkey";
+      }
+
+      const studioLink = document.getElementById("groundTruthStudioLink");
+      if (studioLink) {
+        const tok = getStoredToken();
+        studioLink.href = tok ? `/labelingsvg?token=${encodeURIComponent(tok)}` : "/labelingsvg";
       }
     }
 
@@ -1819,7 +1904,11 @@
         original_sys: origReadings ? origReadings.sys : null,
         original_dia: origReadings ? origReadings.dia : null,
         original_pulse: origReadings ? origReadings.pul : null,
-        notes: notes
+        notes: notes,
+        image_hash: currentInferenceData && currentInferenceData.metadata ? currentInferenceData.metadata.image_hash : null,
+        image_filename: currentInferenceData ? currentInferenceData.filename : null,
+        capture_date_source: currentInferenceData && currentInferenceData.metadata && currentInferenceData.metadata.has_capture_date ? currentInferenceData.metadata.capture_date_source : "UserConfirmed",
+        image_path: currentInferenceData ? (currentInferenceData.image_path || (currentInferenceData.metadata ? currentInferenceData.metadata.image_path : null)) : null
       };
 
       try {
@@ -1882,7 +1971,23 @@
           method: 'POST',
           body: formData
         });
-        const data = await resp.json();
+
+        let data = null;
+        try {
+          data = await resp.json();
+        } catch (jsonErr) {
+          throw new Error(`Server returned invalid response (HTTP ${resp.status} ${resp.statusText})`);
+        }
+
+        if (!resp.ok) {
+          const detail = (data && (data.detail || data.message || data.error)) || `HTTP ${resp.status}: Batch request failed`;
+          throw new Error(detail);
+        }
+
+        if (!data || typeof data !== 'object') {
+          throw new Error("Invalid or empty response payload received from server.");
+        }
+
         currentBatchData = data;
         renderBatchReview(data);
       } catch (err) {
@@ -1906,20 +2011,38 @@
     }
 
     function renderBatchReview(data) {
+      if (!data) return;
       const card = document.getElementById('batchReviewCard');
       card.style.display = 'block';
 
-      // Summary counts
-      document.getElementById('batchSummaryTotal').innerText = data.summary.total_uploaded || 0;
-      document.getElementById('batchSummarySuccess').innerText = data.summary.successful_readings || 0;
-      document.getElementById('batchSummaryUnreadable').innerText = data.summary.unreadable_or_failed || 0;
-      document.getElementById('batchSummaryMissingDate').innerText = data.summary.missing_exif_dates || 0;
-      document.getElementById('batchSummaryDuplicates').innerText = data.summary.duplicates_detected || 0;
+      // Summary counts - safely access with defaults to prevent any undefined access
+      const summary = (data && data.summary) || {};
+      const totalUploaded = data?.total_uploaded ?? summary.total_uploaded ?? data?.total_processed ?? 0;
+      const successful = data?.successful ?? summary.successful_readings ?? summary.successful ?? 0;
+      const failed = data?.failed ?? summary.unreadable_or_failed ?? summary.failed ?? 0;
+      const missingDates = data?.missing_dates ?? summary.missing_exif_dates ?? 0;
+      const duplicates = data?.duplicates ?? summary.duplicates_detected ?? 0;
+
+      const elTotal = document.getElementById('batchSummaryTotal');
+      if (elTotal) elTotal.innerText = totalUploaded;
+      const elSuccess = document.getElementById('batchSummarySuccess');
+      if (elSuccess) elSuccess.innerText = successful;
+      const elUnreadable = document.getElementById('batchSummaryUnreadable');
+      if (elUnreadable) elUnreadable.innerText = failed;
+      const elMissingDate = document.getElementById('batchSummaryMissingDate');
+      if (elMissingDate) elMissingDate.innerText = missingDates;
+      const elDuplicates = document.getElementById('batchSummaryDuplicates');
+      if (elDuplicates) elDuplicates.innerText = duplicates;
 
       const tbody = document.getElementById('batchReviewTableBody');
       tbody.innerHTML = '';
 
-      const items = data.items || [];
+      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data.results) ? data.results : []);
+      if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">No items returned in batch review.</td></tr>';
+        card.scrollIntoView({ behavior: 'smooth' });
+        return;
+      }
       items.forEach((item, idx) => {
         const tr = document.createElement('tr');
         tr.id = `batchRow_${idx}`;
@@ -1966,13 +2089,13 @@
             <div style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">${item.filename} ${dateBadge}</div>
             <input type="datetime-local" id="batchDate_${idx}" class="date-cell-input ${!hasDate ? 'missing-date' : ''}" value="${initialDateVal}">
           </td>
-          <td style="text-align: center;">
+          <td class="cell-bp cell-sys">
             <input type="number" id="batchSys_${idx}" class="table-num-input" value="${readings.sys !== null ? readings.sys : ''}" min="40" max="260" oninput="onBatchRowChange(${idx})">
           </td>
-          <td style="text-align: center;">
+          <td class="cell-bp cell-dia">
             <input type="number" id="batchDia_${idx}" class="table-num-input" value="${readings.dia !== null ? readings.dia : ''}" min="30" max="200" oninput="onBatchRowChange(${idx})">
           </td>
-          <td style="text-align: center;">
+          <td class="cell-bp cell-pul">
             <input type="number" id="batchPul_${idx}" class="table-num-input" value="${readings.pul !== null ? readings.pul : ''}" min="25" max="240">
           </td>
           <td>
@@ -2114,7 +2237,8 @@
           image_filename: items[i].filename,
           capture_date_source: (items[i].metadata && items[i].metadata.has_capture_date)
             ? items[i].metadata.capture_date_source
-            : "UserConfirmed"
+            : "UserConfirmed",
+          image_path: items[i].image_path || (items[i].metadata ? items[i].metadata.image_path : null)
         });
       }
 
@@ -2401,7 +2525,7 @@
         tbody.innerHTML = '';
 
         if (!data.readings || data.readings.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 32px;">No saved readings yet. Scanned readings appear here once confirmed.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 32px;">No saved readings yet. Scanned readings appear here once confirmed.</td></tr>';
           return;
         }
 
@@ -2416,21 +2540,34 @@
           const confText = r.confidence ? `${Math.round(r.confidence * 100)}%` : 'Manual';
           const fileInfo = r.image_filename ? `<div style="font-size:10px; color:var(--text-muted);">${r.image_filename}</div>` : '';
 
+          let photoBtn = '<span style="color:var(--text-muted);">-</span>';
+          const imgFilename = r.image_path ? r.image_path.replace('uploads/', '') : (r.image_hash ? r.image_hash + '.jpg' : null);
+          if (imgFilename) {
+            photoBtn = `<button class="btn btn-secondary" onclick="viewPhoto('${imgFilename}')" style="font-size: 11px; padding: 4px 8px; border-radius: 4px;" title="View stored monitor photograph">&#x1f4f7; View</button>`;
+          }
+
           tr.innerHTML = `
-            <td style="font-family: monospace;">${r.timestamp} ${fileInfo}</td>
-            <td><strong>${r.sys}</strong> mmHg</td>
-            <td><strong>${r.dia}</strong> mmHg</td>
-            <td>${r.pulse ? r.pulse + ' BPM' : '-'}</td>
+            <td style="font-family: monospace; white-space: nowrap;">${r.timestamp} ${fileInfo}</td>
+            <td class="cell-bp cell-sys"><strong>${r.sys}</strong><span class="bp-unit">mmHg</span></td>
+            <td class="cell-bp cell-dia"><strong>${r.dia}</strong><span class="bp-unit">mmHg</span></td>
+            <td class="cell-bp cell-pul">${r.pulse ? '<strong>' + r.pulse + '</strong><span class="bp-unit">BPM</span>' : '-'}</td>
             <td><span class="badge ${catClass}">${r.category}</span></td>
-            <td>${r.model_variant} <span style="font-size:11px; opacity:0.7;">(${confText})</span> ${correctedBadge}</td>
+            <td style="white-space: nowrap;">${r.model_variant} <span style="font-size:11px; opacity:0.7;">(${confText})</span> ${correctedBadge}</td>
             <td>${r.notes || '-'}</td>
-            <td><button class="del-btn" onclick="deleteItem(${r.id})" title="Delete entry">&times;</button></td>
+            <td class="cell-center">${photoBtn}</td>
+            <td class="cell-center"><button class="del-btn" onclick="deleteItem(${r.id})" title="Delete entry">&times;</button></td>
           `;
           tbody.appendChild(tr);
         });
       } catch (err) {
         console.error("Error loading history:", err);
       }
+    }
+
+    function viewPhoto(filename) {
+      const token = getStoredToken();
+      const url = `/api/uploads/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
+      window.open(url, '_blank');
     }
 
     function filterHistoryByDate() {
