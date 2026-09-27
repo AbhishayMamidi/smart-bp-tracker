@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SMART-BP — Ground-Truth Labeling Studio</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-hover: #0ea5e9;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .header-left { display: flex; align-items: center; gap: 15px; }
+    .header-left h1 { font-size: 1.15rem; font-weight: 700; color: var(--primary); }
+    .header-left a { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); }
+    .header-left a:hover { background: #334155; color: #fff; }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .progress-bar-wrap { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-muted); }
+    .progress-bar { width: 140px; height: 8px; background: #334155; border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--success); width: 0%; transition: width 0.3s; }
+    
+    .btn {
+      background: #334155;
+      color: #fff;
+      border: 1px solid var(--border);
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .btn:hover { background: #475569; }
+    .btn-primary { background: var(--primary); color: #0f172a; font-weight: 600; border-color: var(--primary); }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-success { background: var(--success); color: #fff; border-color: var(--success); }
+    
+    /* Main Layout */
+    .studio-body {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+    
+    /* Viewer Panel */
+    .viewer-panel {
+      flex: 1;
+      background: #090d16;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .viewer-toolbar {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 10;
+      display: flex;
+      gap: 6px;
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(8px);
+      padding: 6px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .tool-btn {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .tool-btn:hover { background: #334155; }
+    
+    .image-container {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      cursor: grab;
+      user-select: none;
+    }
+    .image-container:active { cursor: grabbing; }
+    .image-container img {
+      max-width: 90%;
+      max-height: 90%;
+      object-fit: contain;
+      transition: transform 0.15s ease-out;
+      transform-origin: center center;
+    }
+    
+    /* Inspector / Form Panel */
+    .form-panel {
+      width: 380px;
+      background: var(--card-bg);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    .panel-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-header h2 { font-size: 1.05rem; font-weight: 600; margin-bottom: 4px; }
+    .meta-tag { display: inline-block; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; background: #334155; color: var(--text-muted); }
+    
+    .panel-content { padding: 20px; flex: 1; display: flex; flex-direction: column; gap: 18px; }
+    
+    .suggestion-box {
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px dashed var(--primary);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .sugg-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.8rem; color: var(--primary); font-weight: 600; }
+    .sugg-readings { display: flex; justify-content: space-around; text-align: center; }
+    .sugg-val { font-size: 1.25rem; font-weight: 700; color: #fff; }
+    .sugg-lbl { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
+    
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
+    .input-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .input-wrap { display: flex; flex-direction: column; gap: 4px; }
+    .input-wrap span { font-size: 0.7rem; color: var(--text-muted); }
+    .bp-input {
+      background: #0f172a;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      color: #fff;
+      font-size: 1.2rem;
+      font-weight: 700;
+      text-align: center;
+      transition: border-color 0.15s;
+    }
+    .bp-input:focus { border-color: var(--primary); outline: none; }
+    .text-input {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: #fff;
+      font-size: 0.85rem;
+    }
+    
+    .btn-row { display: flex; gap: 10px; margin-top: 6px; }
+    .btn-row .btn { flex: 1; padding: 10px; font-size: 0.9rem; }
+    
+    .shortcuts-hint {
+      margin-top: auto;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .kbd { background: #334155; padding: 1px 5px; border-radius: 3px; font-family: monospace; color: #fff; }
+
+    /* Thumbnails Strip */
+    .thumb-strip-wrap {
+      height: 90px;
+      background: #0b1120;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 8px 14px;
+      overflow-x: auto;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .thumb-card {
+      height: 72px;
+      width: 72px;
+      background: #1e293b;
+      border: 2px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      flex-shrink: 0;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+    .thumb-card:hover { border-color: var(--primary); transform: translateY(-2px); }
+    .thumb-card.active { border-color: var(--primary); box-shadow: 0 0 10px rgba(56, 189, 248, 0.4); }
+    .thumb-card img { width: 100%; height: 100%; object-fit: cover; }
+    .thumb-badge {
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--warning);
+      border: 1px solid #000;
+    }
+    .thumb-badge.verified { background: var(--success); }
+    .thumb-idx {
+      position: absolute;
+      bottom: 2px;
+      left: 3px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      background: rgba(0,0,0,0.7);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-left">
+      <a href="/">&larr; BP Tracker</a>
+      <h1>SMART-BP Ground-Truth Studio</h1>
+      <span class="meta-tag" id="datasetNameTag">Dataset: BP_Dr_Morpen (33 images)</span>
+    </div>
+    <div class="header-right">
+      <div class="progress-bar-wrap">
+        <span id="progressText">0 / 33 Verified</span>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
+      <button class="btn" onclick="exportData('csv')">Export CSV</button>
+      <button class="btn" onclick="exportData('json')">Export JSON</button>
+    </div>
+  </header>
+
+  <div class="studio-body">
+    <!-- Center Viewer Panel -->
+    <div class="viewer-panel">
+      <div class="viewer-toolbar">
+        <button class="tool-btn" onclick="rotateImage(90)" title="Rotate 90° Clockwise (Hotkey: R)">&#8635; Rotate (R)</button>
+        <button class="tool-btn" onclick="zoomImage(0.25)">+ Zoom</button>
+        <button class="tool-btn" onclick="zoomImage(-0.25)">- Zoom</button>
+        <button class="tool-btn" onclick="resetImageView()">Reset View</button>
+        <button class="tool-btn" onclick="toggleContrast()">Toggle High-Contrast</button>
+      </div>
+      <div class="image-container" id="imageContainer">
+        <img id="mainImage" src="" alt="BP Monitor Photo">
+      </div>
+    </div>
+
+    <!-- Right Inspector / Labeling Form -->
+    <div class="form-panel">
+      <div class="panel-header">
+        <h2 id="imageTitle">Loading...</h2>
+        <span class="meta-tag" id="metaInfo">Dimensions: -- | Date: --</span>
+      </div>
+      
+      <div class="panel-content">
+        <!-- Model Candidate Box -->
+        <div class="suggestion-box">
+          <div class="sugg-header">
+            <span>MODEL SUGGESTION</span>
+            <button class="btn" style="padding: 2px 8px; font-size: 0.75rem;" onclick="copySuggestion()">Accept Suggestion</button>
+          </div>
+          <div class="sugg-readings">
+            <div>
+              <div class="sugg-val" id="suggSys">--</div>
+              <div class="sugg-lbl">SYS</div>
+            </div>
+            <div>
+              <div class="sugg-val" id="suggDia">--</div>
+              <div class="sugg-lbl">DIA</div>
+            </div>
+            <div>
+              <div class="sugg-val" id="suggPul">--</div>
+              <div class="sugg-lbl">PULSE</div>
+            </div>
+          </div>
+          <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 6px; text-align: center;" id="suggMeta">
+            Confidence: -- | Status: --
+          </div>
+        </div>
+
+        <!-- Verified Ground Truth Form -->
+        <div class="form-group">
+          <label>VERIFIED READINGS (Ground Truth)</label>
+          <div class="input-row">
+            <div class="input-wrap">
+              <span>SYS (mmHg)</span>
+              <input type="number" id="gtSys" class="bp-input" min="40" max="260" placeholder="SYS" autofocus>
+            </div>
+            <div class="input-wrap">
+              <span>DIA (mmHg)</span>
+              <input type="number" id="gtDia" class="bp-input" min="30" max="200" placeholder="DIA">
+            </div>
+            <div class="input-wrap">
+              <span>PUL (/min)</span>
+              <input type="number" id="gtPul" class="bp-input" min="25" max="240" placeholder="PUL">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>NOTES / OBSERVATIONS</label>
+          <input type="text" id="gtNotes" class="text-input" placeholder="e.g. slight glare, macro angle, LCD dim...">
+        </div>
+
+        <div class="btn-row">
+          <button class="btn" onclick="navigate(-1)">&larr; Prev</button>
+          <button class="btn btn-primary" onclick="saveAndNext()">Save &amp; Next &rarr;</button>
+        </div>
+
+        <div class="shortcuts-hint">
+          <strong>Keyboard Shortcuts:</strong><br>
+          <span class="kbd">Enter</span> Save &amp; Advance to next<br>
+          <span class="kbd">R</span> Rotate image 90°<br>
+          <span class="kbd">[</span> / <span class="kbd">]</span> Previous / Next image<br>
+          <span class="kbd">1</span> Focus SYS &nbsp; <span class="kbd">2</span> Focus DIA &nbsp; <span class="kbd">3</span> Focus PUL
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Thumbnail Strip -->
+  <div class="thumb-strip-wrap" id="thumbStrip"></div>
+
+  <script>
+    let images = [];
+    let currentIndex = 0;
+    let currentRotation = 0;
+    let currentZoom = 1.0;
+    let highContrast = false;
+
+    function getToken() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlToken = urlParams.get("token") || urlParams.get("access_token");
+      if (urlToken) {
+        localStorage.setItem("bp_access_token", urlToken.trim());
+        return urlToken.trim();
+      }
+      return localStorage.getItem("bp_access_token") || "";
+    }
+
+    let token = getToken();
+
+    async function loadDataset() {
+      token = getToken();
+      try {
+        const res = await fetch("/api/dataset/images?token=" + encodeURIComponent(token), {
+          headers: { "X-Access-Token": token }
+        });
+        if (res.status === 401) {
+          const userTok = prompt("Enter Personal App Access Token:");
+          if (userTok) {
+            localStorage.setItem("bp_access_token", userTok.trim());
+            token = userTok.trim();
+            location.reload();
+          }
+          return;
+        }
+        const data = await res.json();
+        images = data.images || [];
+        renderThumbnails();
+        if (images.length > 0) {
+          selectImage(0);
+        }
+        updateProgress();
+      } catch (e) {
+        console.error("Failed to load dataset", e);
+        alert("Failed to load dataset: " + e.message);
+      }
+    }
+
+    function renderThumbnails() {
+      const strip = document.getElementById("thumbStrip");
+      strip.innerHTML = "";
+      images.forEach((img, idx) => {
+        const card = document.createElement("div");
+        card.className = "thumb-card" + (idx === currentIndex ? " active" : "");
+        card.id = "thumb-" + idx;
+        card.onclick = () => selectImage(idx);
+
+        const imgEl = document.createElement("img");
+        imgEl.src = "/api/dataset/image/" + encodeURIComponent(img.filename) + "?token=" + encodeURIComponent(token);
+        imgEl.alt = img.filename;
+
+        const badge = document.createElement("div");
+        badge.className = "thumb-badge" + (img.verified ? " verified" : "");
+        badge.id = "badge-" + idx;
+
+        const idxLbl = document.createElement("div");
+        idxLbl.className = "thumb-idx";
+        idxLbl.textContent = idx + 1;
+
+        card.appendChild(imgEl);
+        card.appendChild(badge);
+        card.appendChild(idxLbl);
+        strip.appendChild(card);
+      });
+    }
+
+    function selectImage(idx) {
+      if (idx < 0 || idx >= images.length) return;
+      currentIndex = idx;
+      
+      document.querySelectorAll(".thumb-card").forEach((c, i) => {
+        c.classList.toggle("active", i === idx);
+      });
+      const activeCard = document.getElementById("thumb-" + idx);
+      if (activeCard) activeCard.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+
+      const item = images[idx];
+      document.getElementById("imageTitle").textContent = `[${idx + 1}/${images.length}] ${item.filename}`;
+      document.getElementById("metaInfo").textContent = `${item.width}x${item.height} (${item.orientation}) | ${item.capture_date || 'Date unknown'}`;
+
+      // Set Main Image
+      const mainImg = document.getElementById("mainImage");
+      mainImg.src = "/api/dataset/image/" + encodeURIComponent(item.filename) + "?token=" + encodeURIComponent(token);
+      
+      // Auto-rotate if Landscape or specified
+      if (item.orientation === "Landscape") {
+        currentRotation = 270; // Pixel 9a landscape photos are typically 270 deg
+      } else {
+        currentRotation = 0;
+      }
+      currentZoom = 1.0;
+      applyImageTransform();
+
+      // Suggestions
+      document.getElementById("suggSys").textContent = item.candidate_sys !== null ? item.candidate_sys : "-";
+      document.getElementById("suggDia").textContent = item.candidate_dia !== null ? item.candidate_dia : "-";
+      document.getElementById("suggPul").textContent = item.candidate_pul !== null ? item.candidate_pul : "-";
+      document.getElementById("suggMeta").textContent = `Confidence: ${(item.candidate_conf * 100).toFixed(1)}% | Status: ${item.candidate_status}`;
+
+      // Form fields
+      document.getElementById("gtSys").value = item.sys !== null ? item.sys : (item.candidate_sys || "");
+      document.getElementById("gtDia").value = item.dia !== null ? item.dia : (item.candidate_dia || "");
+      document.getElementById("gtPul").value = item.pul !== null ? item.pul : (item.candidate_pul || "");
+      document.getElementById("gtNotes").value = item.notes || "";
+
+      document.getElementById("gtSys").focus();
+      document.getElementById("gtSys").select();
+    }
+
+    function rotateImage(deg) {
+      currentRotation = (currentRotation + deg) % 360;
+      applyImageTransform();
+    }
+
+    function zoomImage(delta) {
+      currentZoom = Math.max(0.5, Math.min(3.0, currentZoom + delta));
+      applyImageTransform();
+    }
+
+    function resetImageView() {
+      currentRotation = images[currentIndex]?.orientation === "Landscape" ? 270 : 0;
+      currentZoom = 1.0;
+      highContrast = false;
+      applyImageTransform();
+    }
+
+    function toggleContrast() {
+      highContrast = !highContrast;
+      applyImageTransform();
+    }
+
+    function applyImageTransform() {
+      const img = document.getElementById("mainImage");
+      let filter = highContrast ? "contrast(180%) brightness(110%)" : "none";
+      img.style.transform = `scale(${currentZoom}) rotate(${currentRotation}deg)`;
+      img.style.filter = filter;
+    }
+
+    function copySuggestion() {
+      const item = images[currentIndex];
+      if (item.candidate_sys) document.getElementById("gtSys").value = item.candidate_sys;
+      if (item.candidate_dia) document.getElementById("gtDia").value = item.candidate_dia;
+      if (item.candidate_pul) document.getElementById("gtPul").value = item.candidate_pul;
+      document.getElementById("gtSys").focus();
+    }
+
+    async function saveCurrentLabel() {
+      const item = images[currentIndex];
+      const sysVal = parseInt(document.getElementById("gtSys").value, 10);
+      const diaVal = parseInt(document.getElementById("gtDia").value, 10);
+      const pulVal = parseInt(document.getElementById("gtPul").value, 10);
+      const notesVal = document.getElementById("gtNotes").value.trim();
+
+      if (isNaN(sysVal) || isNaN(diaVal)) {
+        alert("Please enter valid numeric values for SYS and DIA.");
+        return false;
+      }
+
+      item.sys = sysVal;
+      item.dia = diaVal;
+      item.pul = isNaN(pulVal) ? null : pulVal;
+      item.notes = notesVal;
+      item.verified = true;
+
+      // Update badge
+      const badge = document.getElementById("badge-" + currentIndex);
+      if (badge) badge.classList.add("verified");
+
+      updateProgress();
+
+      // Post to backend
+      try {
+        await fetch("/api/dataset/save-label?token=" + encodeURIComponent(token), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Access-Token": token
+          },
+          body: JSON.stringify({
+            filename: item.filename,
+            sys: item.sys,
+            dia: item.dia,
+            pul: item.pul,
+            verified: true,
+            notes: item.notes
+          })
+        });
+      } catch (e) {
+        console.error("Failed to save label to server", e);
+      }
+      return true;
+    }
+
+    async function saveAndNext() {
+      const ok = await saveCurrentLabel();
+      if (ok) {
+        if (currentIndex < images.length - 1) {
+          selectImage(currentIndex + 1);
+        } else {
+          alert("All 33 images have been reviewed! Click Export CSV or JSON to download.");
+        }
+      }
+    }
+
+    function navigate(delta) {
+      const target = currentIndex + delta;
+      if (target >= 0 && target < images.length) {
+        selectImage(target);
+      }
+    }
+
+    function updateProgress() {
+      const verified = images.filter(x => x.verified).length;
+      const total = images.length;
+      document.getElementById("progressText").textContent = `${verified} / ${total} Verified`;
+      const pct = total > 0 ? (verified / total) * 100 : 0;
+      document.getElementById("progressFill").style.width = pct + "%";
+    }
+
+    function exportData(format) {
+      window.open(`/api/dataset/export?format=${format}&token=${encodeURIComponent(token)}`, "_blank");
+    }
+
+    // Keyboard shortcuts
+    window.addEventListener("keydown", (e) => {
+      if (e.target.tagName === "INPUT" && e.key !== "Enter") {
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        saveAndNext();
+      } else if (e.key === "r" || e.key === "R") {
+        rotateImage(90);
+      } else if (e.key === "]") {
+        navigate(1);
+      } else if (e.key === "[") {
+        navigate(-1);
+      } else if (e.key === "1") {
+        document.getElementById("gtSys").focus();
+        document.getElementById("gtSys").select();
+      } else if (e.key === "2") {
+        document.getElementById("gtDia").focus();
+        document.getElementById("gtDia").select();
+      } else if (e.key === "3") {
+        document.getElementById("gtPul").focus();
+        document.getElementById("gtPul").select();
+      }
+    });
+
+    window.onload = loadDataset;
+  </script>
+</body>
+</html>

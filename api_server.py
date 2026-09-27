@@ -27,15 +27,49 @@ if PROJECT_ROOT not in sys.path:
 from smart_bp_inference import get_inference_engine, DEFAULT_WEIGHTS
 import database
 import exif_utils
+import storage
+import dataset_manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("bp_api")
+
+
+def load_env_file():
+    """Parses local .env file into os.environ if present, without external dependencies."""
+    env_file = os.path.join(PROJECT_ROOT, ".env")
+    if os.path.isfile(env_file):
+        try:
+            with open(env_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip("'\"")
+                        if k and k not in os.environ:
+                            os.environ[k] = v
+            logger.info("Loaded environment variables from local .env")
+        except Exception as e:
+            logger.warning(f"Could not load .env file: {e}")
+
+
+load_env_file()
 
 # ============================================================================
 # Security: Access Token & Single-User Access Gate
 # ============================================================================
 
-_env_token = os.environ.get("APP_ACCESS_TOKEN", "").strip()
+is_render_env = bool(os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID"))
+
+# In local mode, prioritize LOCAL_APP_ACCESS_TOKEN if configured, else APP_ACCESS_TOKEN
+_env_token = ""
+if not is_render_env and os.environ.get("LOCAL_APP_ACCESS_TOKEN"):
+    _env_token = os.environ.get("LOCAL_APP_ACCESS_TOKEN", "").strip()
+if not _env_token:
+    _env_token = os.environ.get("APP_ACCESS_TOKEN", "").strip()
+
 if _env_token:
     ACTIVE_ACCESS_TOKEN = _env_token
     IS_AUTO_GENERATED_TOKEN = False
@@ -46,30 +80,37 @@ else:
 
 def get_expected_token() -> str:
     """Fetches the current expected access token (supports runtime env overrides in testing)."""
+    is_render = bool(os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID"))
+    if not is_render and os.environ.get("LOCAL_APP_ACCESS_TOKEN"):
+        return os.environ.get("LOCAL_APP_ACCESS_TOKEN", "").strip()
     override = os.environ.get("APP_ACCESS_TOKEN", "").strip()
     return override if override else ACTIVE_ACCESS_TOKEN
 
 
 def verify_access(
     x_access_token: Optional[str] = Header(None, alias="X-Access-Token"),
-    authorization: Optional[str] = Header(None, alias="Authorization")
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    token: Optional[str] = Query(None, alias="token")
 ) -> str:
     """
     Enforces authentication on all personal health routes and inference endpoints.
-    Accepts tokens via X-Access-Token header or Authorization: Bearer <token>.
+    Accepts tokens via X-Access-Token header, Authorization: Bearer <token>,
+    or ?token=<token> query parameter (for media/image requests).
     Uses constant-time secrets.compare_digest to prevent timing attacks.
     """
-    token = None
+    tok = None
     if x_access_token:
-        token = x_access_token.strip()
+        tok = x_access_token.strip()
     elif authorization:
         parts = authorization.strip().split()
         if len(parts) == 2 and parts[0].lower() == "bearer":
-            token = parts[1].strip()
+            tok = parts[1].strip()
         elif len(parts) == 1:
-            token = parts[0].strip()
+            tok = parts[0].strip()
+    elif token:
+        tok = token.strip()
 
-    if not token:
+    if not tok:
         raise HTTPException(
             status_code=401,
             detail="Unauthorized: Access token required for personal health records.",
@@ -77,14 +118,14 @@ def verify_access(
         )
 
     expected = get_expected_token()
-    if not secrets.compare_digest(token, expected):
+    if not secrets.compare_digest(tok, expected):
         raise HTTPException(
             status_code=401,
             detail="Unauthorized: Invalid access token.",
             headers={"WWW-Authenticate": "Bearer"}
         )
 
-    return token
+    return tok
 
 
 # ============================================================================
@@ -158,6 +199,7 @@ class ConfirmReadingRequest(BaseModel):
     image_hash: Optional[str] = None
     image_filename: Optional[str] = None
     capture_date_source: Optional[str] = None
+    image_path: Optional[str] = None
 
 
 class BatchConfirmItem(BaseModel):
@@ -174,6 +216,7 @@ class BatchConfirmItem(BaseModel):
     image_hash: Optional[str] = None
     image_filename: Optional[str] = None
     capture_date_source: Optional[str] = None
+    image_path: Optional[str] = None
 
 
 class BatchConfirmRequest(BaseModel):
@@ -188,6 +231,15 @@ class Base64ImageRequest(BaseModel):
 
 class VerifyTokenRequest(BaseModel):
     token: str
+
+
+class SaveDatasetLabelRequest(BaseModel):
+    filename: str
+    sys: int = Field(..., ge=40, le=260)
+    dia: int = Field(..., ge=30, le=200)
+    pul: Optional[int] = Field(None, ge=25, le=240)
+    verified: bool = True
+    notes: Optional[str] = ""
 
 
 # ============================================================================
@@ -294,6 +346,8 @@ async def read_bp_image_endpoint(
 
         # Extract metadata prior to inference
         metadata = exif_utils.extract_exif_metadata(image_bytes)
+        img_path = storage.save_image_bytes(image_bytes, metadata["image_hash"], image.filename or "monitor_photo.jpg")
+        metadata["image_path"] = img_path
         duplicate_record = database.check_duplicate_image(metadata["image_hash"])
 
         engine = get_inference_engine(variant=variant)
@@ -310,6 +364,7 @@ async def read_bp_image_endpoint(
         result["is_duplicate"] = duplicate_record is not None
         result["duplicate_info"] = duplicate_record
         result["filename"] = image.filename or "monitor_photo.jpg"
+        result["image_path"] = img_path
 
         return JSONResponse(content=result)
 
@@ -342,6 +397,10 @@ def read_bp_image_base64_endpoint(
         if len(image_bytes) > MAX_UPLOAD_SIZE:
             raise HTTPException(status_code=413, detail=f"Image exceeds limit of {MAX_UPLOAD_SIZE // (1024*1024)}MB.")
 
+        metadata = exif_utils.extract_exif_metadata(image_bytes)
+        img_path = storage.save_image_bytes(image_bytes, metadata["image_hash"], "camera_snap.jpg")
+        metadata["image_path"] = img_path
+
         engine = get_inference_engine(variant=req.variant or "SMART-BP+")
         result = engine.predict(
             image_input=image_bytes,
@@ -351,6 +410,8 @@ def read_bp_image_base64_endpoint(
         sys_val = result["readings"].get("sys")
         dia_val = result["readings"].get("dia")
         result["category"] = database.calculate_category(sys_val, dia_val)
+        result["metadata"] = metadata
+        result["image_path"] = img_path
 
         return JSONResponse(content=result)
     except HTTPException:
@@ -369,7 +430,7 @@ def read_bp_image_base64_endpoint(
 
 @app.post("/api/batch-process")
 async def batch_process_endpoint(
-    images: List[UploadFile] = File(...),
+    images: List[UploadFile] = File(default=[]),
     variant: str = Form("SMART-BP+"),
     conf_threshold: float = Form(0.2),
     _token: str = Depends(verify_access)
@@ -428,6 +489,8 @@ async def batch_process_endpoint(
 
             # 1. Extract EXIF metadata BEFORE any image transformations
             metadata = exif_utils.extract_exif_metadata(image_bytes)
+            img_path = storage.save_image_bytes(image_bytes, metadata["image_hash"], filename)
+            metadata["image_path"] = img_path
             if not metadata["has_capture_date"]:
                 count_missing_dates += 1
 
@@ -482,6 +545,7 @@ async def batch_process_endpoint(
                 "confidence": conf_info,
                 "category": category,
                 "metadata": metadata,
+                "image_path": img_path,
                 "thumbnail_base64": thumb_b64,
                 "message": infer_result.get("message", "")
             })
@@ -499,6 +563,7 @@ async def batch_process_endpoint(
                 "category": "Unknown",
                 "confidence": {},
                 "metadata": {"has_capture_date": False, "display_datetime": "Capture date unavailable", "image_hash": None},
+                "image_path": None,
                 "thumbnail_base64": None
             })
             count_unreadable += 1
@@ -506,17 +571,33 @@ async def batch_process_endpoint(
             # Explicit garbage collection after each image to stay inside 512MB RAM
             gc.collect()
 
+    errors_list = [
+        item.get("error_message") or item.get("message")
+        for item in results
+        if item.get("status") in ("error", "unreadable") and (item.get("error_message") or item.get("message"))
+    ]
+
     return {
+        "success": True,
         "status": "success",
+        "total_uploaded": len(images),
         "total_processed": len(images),
+        "successful": count_success,
+        "failed": count_unreadable,
+        "duplicates": count_duplicates,
+        "missing_dates": count_missing_dates,
         "summary": {
             "total_uploaded": len(images),
             "successful_readings": count_success,
             "unreadable_or_failed": count_unreadable,
             "duplicates_detected": count_duplicates,
-            "missing_exif_dates": count_missing_dates
+            "missing_exif_dates": count_missing_dates,
+            "successful": count_success,
+            "failed": count_unreadable
         },
-        "items": results
+        "items": results,
+        "results": results,
+        "errors": errors_list
     }
 
 
@@ -555,7 +636,8 @@ def batch_confirm_endpoint(
             "notes": item.notes or "",
             "image_hash": item.image_hash,
             "image_filename": item.image_filename,
-            "capture_date_source": item.capture_date_source or "UserConfirmed"
+            "capture_date_source": item.capture_date_source or "UserConfirmed",
+            "image_path": item.image_path
         })
 
     saved = database.save_batch_readings(items_to_save)
@@ -594,7 +676,8 @@ def confirm_and_save_reading(
             custom_timestamp=req.timestamp,
             image_hash=req.image_hash,
             image_filename=req.image_filename,
-            capture_date_source=req.capture_date_source
+            capture_date_source=req.capture_date_source,
+            image_path=req.image_path
         )
         return {"status": "success", "message": "Reading saved successfully.", "reading": saved_record}
     except Exception as e:
@@ -669,6 +752,114 @@ def get_sample_image(_token: str = Depends(verify_access)):
     return FileResponse(sample_path, media_type="image/png", filename="sample_bp_monitor.png")
 
 
+@app.get("/api/uploads/{filename}")
+def get_uploaded_image_endpoint(
+    filename: str,
+    _token: str = Depends(verify_access)
+):
+    """
+    Safely retrieves a stored original photograph by filename.
+    Guaranteed path traversal protection using storage.get_image_file_path.
+    Requires authentication.
+    """
+    file_path = storage.get_image_file_path(filename)
+    if not file_path or not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Photograph not found on disk.")
+
+    media_type = "image/jpeg"
+    if file_path.lower().endswith(".png"):
+        media_type = "image/png"
+    elif file_path.lower().endswith(".webp"):
+        media_type = "image/webp"
+
+    return FileResponse(file_path, media_type=media_type)
+
+
+@app.post("/api/backup")
+def create_backup_endpoint(
+    _token: str = Depends(verify_access)
+):
+    """Creates a local zip backup of the SQLite database and all uploaded photographs."""
+    try:
+        backup_path = storage.create_backup()
+        return {
+            "status": "success",
+            "message": "Backup archive created successfully.",
+            "backup_file": os.path.basename(backup_path),
+            "backup_path": backup_path
+        }
+    except Exception as e:
+        logger.exception("Backup creation failed")
+        raise HTTPException(status_code=500, detail=f"Backup creation failed: {str(e)}")
+
+
+# ============================================================================
+# Dataset Ground-Truth & Labeling Studio Endpoints
+# ============================================================================
+
+@app.get("/labelingsvg")
+@app.get("/labeling")
+def serve_labeling_studio():
+    """Serves the interactive ground-truth labeling web studio."""
+    labeling_path = os.path.join(STATIC_DIR, "labeling.html")
+    if os.path.exists(labeling_path):
+        return FileResponse(labeling_path)
+    raise HTTPException(status_code=404, detail="Labeling studio page not found.")
+
+
+@app.get("/api/dataset/images")
+def get_dataset_images_endpoint(_token: str = Depends(verify_access)):
+    """Returns dataset inventory with metadata and verified labels for ground-truth review."""
+    return {"images": dataset_manager.get_dataset_images()}
+
+
+@app.get("/api/dataset/image/{filename}")
+def get_dataset_image_file_endpoint(
+    filename: str,
+    _token: str = Depends(verify_access)
+):
+    """Safely serves an image from the BP_Dr_Morpen dataset directory."""
+    img_path = dataset_manager.get_dataset_image_path(filename)
+    if not img_path:
+        raise HTTPException(status_code=404, detail="Dataset image not found.")
+    return FileResponse(img_path, media_type="image/jpeg")
+
+
+@app.post("/api/dataset/save-label")
+def save_dataset_label_endpoint(
+    req: SaveDatasetLabelRequest,
+    _token: str = Depends(verify_access)
+):
+    """Saves a verified ground-truth reading for a dataset photo."""
+    try:
+        updated = dataset_manager.save_image_label(
+            filename=req.filename,
+            sys_val=req.sys,
+            dia_val=req.dia,
+            pul_val=req.pul,
+            verified=req.verified,
+            notes=req.notes or ""
+        )
+        return {"status": "success", "entry": updated}
+    except Exception as e:
+        logger.exception("Failed to save label")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/dataset/export")
+def export_dataset_labels_endpoint(
+    format: str = Query("csv", pattern="^(csv|json)$"),
+    _token: str = Depends(verify_access)
+):
+    """Exports ground-truth labels as CSV or JSON."""
+    if format == "json":
+        json_path = os.path.join(PROJECT_ROOT, "ground_truth_labels.json")
+        return FileResponse(json_path, media_type="application/json", filename="ground_truth_labels.json")
+    else:
+        csv_path = os.path.join(PROJECT_ROOT, "ground_truth_labels.csv")
+        return FileResponse(csv_path, media_type="text/csv", filename="ground_truth_labels.csv")
+
+
 # ============================================================================
 # Static Files & Frontend App Serving
 # ============================================================================
@@ -706,26 +897,31 @@ if __name__ == "__main__":
     get_inference_engine(variant="SMART-BP+")
     database.init_db()
 
-    port = int(os.environ.get("PORT", 10000))
+    # Local mode defaults to port 8000; Render defaults to port 10000 or $PORT
+    is_render = bool(os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID"))
+    default_port = 10000 if is_render else 8000
+    port = int(os.environ.get("PORT", default_port))
     host = os.environ.get("HOST", "0.0.0.0")
     local_ip = get_local_ip()
 
     print("\n" + "=" * 66)
     print("  BLOOD PRESSURE TRACKER & SMART-BP AI SERVER READY")
     print("=" * 66)
+    print(f"  * Mode       : {'Render Cloud Deployment' if is_render else 'Local Server (Windows Laptop)'}")
     print(f"  * Local URL  : http://127.0.0.1:{port}/")
     print(f"  * Network URL: http://{local_ip}:{port}/")
     print(f"  * Bound Host : {host}:{port}")
 
-    if IS_AUTO_GENERATED_TOKEN and not os.environ.get("APP_ACCESS_TOKEN"):
+    if IS_AUTO_GENERATED_TOKEN and not os.environ.get("APP_ACCESS_TOKEN") and not os.environ.get("LOCAL_APP_ACCESS_TOKEN"):
         print("\n" + "!" * 66)
-        print("  [SECURITY NOTICE] APP_ACCESS_TOKEN was not set in environment.")
+        print("  [SECURITY NOTICE] Access token was not configured in environment or .env.")
         print("  A cryptographically secure session passkey has been generated:")
         print(f"    ACTIVE ACCESS TOKEN: {ACTIVE_ACCESS_TOKEN}")
-        print("  Enter this passkey into your browser/mobile app to unlock.")
-        print("  Set APP_ACCESS_TOKEN in your environment for a persistent key.")
+        print("  Enter this passkey into your browser / Android phone to unlock.")
+        print("  Set LOCAL_APP_ACCESS_TOKEN in your local .env file for a permanent passkey.")
         print("!" * 66)
 
     print("=" * 66 + "\n")
 
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    # Use a single worker for PyTorch model inference to avoid duplicate memory allocation
+    uvicorn.run(app, host=host, port=port, log_level="info", workers=1)

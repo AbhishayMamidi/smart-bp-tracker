@@ -9,11 +9,23 @@ __pycache__/
 *$py.class
 *.pyd
 
-# Private health data & local database
+# Private health data, backups & local database
 *.db
 *.sqlite
 *.sqlite3
 bp_tracker.db
+data/
+uploads/
+backups/
+*.bak
+
+# Dataset & Ground-Truth Labels (Private photos & clinical labels)
+BP_Dr_Morpen/
+ground_truth_labels*
+BP_Dr_Morpen_inventory.*
+baseline_evaluation_report.json
+final_evaluation_report.json
+baseline_predictions_33.json
 
 # Secrets & Environment variables
 .env

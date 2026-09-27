@@ -75,6 +75,7 @@ def init_db():
                 image_hash TEXT,
                 image_filename TEXT,
                 capture_date_source TEXT,
+                image_path TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -91,6 +92,8 @@ def init_db():
             cursor.execute("ALTER TABLE bp_readings ADD COLUMN image_filename TEXT")
         if "capture_date_source" not in cols:
             cursor.execute("ALTER TABLE bp_readings ADD COLUMN capture_date_source TEXT")
+        if "image_path" not in cols:
+            cursor.execute("ALTER TABLE bp_readings ADD COLUMN image_path TEXT")
         conn.commit()
 
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_bp_readings_user_time ON bp_readings (user_id, timestamp DESC)")
@@ -161,7 +164,8 @@ def save_reading(
     user_id: Optional[str] = None,
     image_hash: Optional[str] = None,
     image_filename: Optional[str] = None,
-    capture_date_source: Optional[str] = None
+    capture_date_source: Optional[str] = None,
+    image_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Saves a confirmed BP reading to the database.
@@ -190,13 +194,13 @@ def save_reading(
                 user_id, timestamp, sys, dia, pulse, category,
                 model_variant, confidence, original_sys, original_dia,
                 original_pulse, was_corrected, notes,
-                image_hash, image_filename, capture_date_source
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                image_hash, image_filename, capture_date_source, image_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             active_user, now_iso, sys, dia, pulse, category,
             model_variant, confidence, original_sys, original_dia,
             original_pulse, was_corrected, notes,
-            image_hash, image_filename, capture_date_source
+            image_hash, image_filename, capture_date_source, image_path
         ))
         conn.commit()
         reading_id = cursor.lastrowid
@@ -218,7 +222,8 @@ def save_reading(
         "notes": notes,
         "image_hash": image_hash,
         "image_filename": image_filename,
-        "capture_date_source": capture_date_source
+        "capture_date_source": capture_date_source,
+        "image_path": image_path
     }
 
     # Cloud Supabase synchronization scoped to authenticated user
@@ -237,7 +242,8 @@ def save_reading(
                 "was_corrected": bool(was_corrected),
                 "image_hash": image_hash,
                 "image_filename": image_filename,
-                "capture_date_source": capture_date_source
+                "capture_date_source": capture_date_source,
+                "image_path": image_path
             }).execute()
             logger.info("Reading synced to Supabase successfully with user scoping.")
         except Exception as e:
@@ -267,7 +273,8 @@ def save_batch_readings(
             user_id=user_id,
             image_hash=item.get("image_hash"),
             image_filename=item.get("image_filename"),
-            capture_date_source=item.get("capture_date_source")
+            capture_date_source=item.get("capture_date_source"),
+            image_path=item.get("image_path")
         )
         saved_records.append(rec)
     return saved_records
@@ -324,7 +331,8 @@ def get_all_readings(
 
 
 def delete_reading(reading_id: int, user_id: Optional[str] = None) -> bool:
-    """Deletes a reading by ID, strictly verifying ownership."""
+    """Deletes a reading by ID, strictly verifying ownership and cleaning up orphaned image files."""
+    import storage
     active_user = (user_id or BP_USER_ID).strip() or "personal_owner"
     if _supabase_client:
         try:
@@ -340,12 +348,29 @@ def delete_reading(reading_id: int, user_id: Optional[str] = None) -> bool:
     db_file = get_db_path()
     with sqlite3.connect(db_file) as conn:
         cursor = conn.cursor()
+        # Find image_path and image_hash before deleting to prevent orphan files
+        cursor.execute("SELECT image_path, image_hash FROM bp_readings WHERE id = ? AND (user_id = ? OR user_id IS NULL)", (reading_id, active_user))
+        target_row = cursor.fetchone()
+
         cursor.execute("""
             DELETE FROM bp_readings
             WHERE id = ? AND (user_id = ? OR user_id IS NULL)
         """, (reading_id, active_user))
         conn.commit()
-        return cursor.rowcount > 0
+        deleted = cursor.rowcount > 0
+
+        # If deleted and row had an image, verify whether any other row still references the hash
+        if deleted and target_row:
+            img_path, img_hash = target_row
+            if img_hash:
+                cursor.execute("SELECT COUNT(*) FROM bp_readings WHERE image_hash = ?", (img_hash,))
+                rem_count = cursor.fetchone()[0]
+                if rem_count == 0 and img_path:
+                    storage.delete_image_file(img_path)
+            elif img_path:
+                storage.delete_image_file(img_path)
+
+        return deleted
 
 
 def get_stats(user_id: Optional[str] = None) -> Dict[str, Any]:

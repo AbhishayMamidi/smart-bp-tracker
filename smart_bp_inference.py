@@ -79,7 +79,9 @@ class Box:
 
     def isInside(self, otherBox: "Box") -> bool:
         """
-        Returns True if this box overlaps significantly (> 75%) inside otherBox.
+        Returns True if this digit box belongs inside otherBox.
+        Allows leading digits (e.g. '1' in '101') that partially extend outside
+        the container horizontally, provided vertical overlap and proximity hold.
         """
         x1Intersection = max(otherBox.x1, self.x1)
         y1Intersection = max(otherBox.y1, self.y1)
@@ -91,7 +93,17 @@ class Box:
 
         if self.area() <= 0:
             return False
-        return (intersection_area / self.area() > 0.75)
+
+        # 2D area overlap
+        if (intersection_area / self.area()) > 0.45:
+            return True
+
+        # Vertical overlap check (in case container is clipped horizontally)
+        y_overlap_ratio = heightIntersection / self.height() if self.height() > 0 else 0
+        self_xc = (self.x1 + self.x2) / 2
+        h_near = (otherBox.x1 - self.width() * 0.6) <= self_xc <= (otherBox.x2 + self.width() * 0.6)
+
+        return (y_overlap_ratio > 0.60 and h_near)
 
 
 class BoxCollection:
@@ -102,6 +114,31 @@ class BoxCollection:
     def __init__(self):
         self.digits: List[Box] = []  # array of Box objects
         self.value: Optional[int] = None  # reconstructed numeric value
+
+    def deduplicateDigits(self, iou_thresh: float = 0.35):
+        """
+        Suppresses duplicate bounding boxes detecting the same physical 7-segment digit.
+        Keeps the higher-confidence detection.
+        """
+        non_10 = [d for d in self.digits if d.className() != "10"]
+        box_10 = [d for d in self.digits if d.className() == "10"]
+        if len(non_10) <= 1:
+            return
+
+        sorted_digits = sorted(non_10, key=lambda d: d.confidence, reverse=True)
+        kept = []
+        for d in sorted_digits:
+            is_dup = False
+            for k in kept:
+                x_inter = max(0.0, min(d.x2, k.x2) - max(d.x1, k.x1))
+                min_w = min(d.width(), k.width())
+                if min_w > 0 and (x_inter / min_w) > iou_thresh:
+                    is_dup = True
+                    break
+            if not is_dup:
+                kept.append(d)
+
+        self.digits = box_10 + sorted(kept, key=lambda d: d.x1)
 
     def sortDigit(self):
         """Sort digits from left to right based on x-coordinate."""
@@ -116,11 +153,15 @@ class BoxCollection:
                 return
 
     def getValue(self) -> Optional[int]:
+        self.deduplicateDigits(iou_thresh=0.35)
         self.sortDigit()
-        concatDigit = ""
-        for digit in self.digits:
-            if digit.className() != "10":
-                concatDigit += digit.className()
+        non_10_digits = [d for d in self.digits if d.className() != "10"]
+        # Blood pressure values have 2 or 3 digits (filters clock/time strings with 4 digits and 1-digit noise)
+        if len(non_10_digits) < 2 or len(non_10_digits) > 3:
+            self.value = None
+            return None
+
+        concatDigit = "".join(d.className() for d in non_10_digits)
         if concatDigit != "":
             try:
                 self.value = int(concatDigit)
@@ -295,38 +336,17 @@ def keep_best_group_per_row(values: List[BoxCollection], y_tol: float = 35.0) ->
 
 def _try_fix_group(group: BoxCollection, kind: str) -> bool:
     """
-    Post-processing step to fix implausible BP values.
-    Iteratively removes lowest-confidence digit if outside physiological bounds.
+    Validation safeguard: preserves detected digits and does not silently delete them.
     """
-    digits = [d for d in group.digits if d.className() != "10"]
-    if len(digits) < 3:
-        return False
-
-    val = group.getValue()
-    if val is None:
-        return False
-
-    if kind == "sys":
-        bad = (val < 50) or (val > 240)
-    elif kind == "dia":
-        bad = (val < 30) or (val > 180)
-    else:  # pulse
-        bad = (val < 25) or (val > 200)
-
-    if not bad:
-        return False
-
-    worst = min(digits, key=lambda d: d.confidence)
-    group.digits.remove(worst)
-    return True
+    return False
 
 
 def validate_bp_value(val: Any, kind: str) -> Optional[int]:
     """
     Validates physiological plausibility:
-    - SYS: 50 - 240 mmHg
-    - DIA: 30 - 180 mmHg
-    - PUL: 25 - 200 BPM
+    - SYS: 40 - 260 mmHg
+    - DIA: 30 - 200 mmHg
+    - PUL: 25 - 240 BPM
     Returns valid integer or None.
     """
     try:
@@ -335,16 +355,66 @@ def validate_bp_value(val: Any, kind: str) -> Optional[int]:
         return None
 
     if kind == "sys":
-        if 50 <= val <= 240:
+        if 40 <= val <= 260:
             return val
     elif kind == "dia":
-        if 30 <= val <= 180:
+        if 30 <= val <= 200:
             return val
     elif kind == "pul":
-        if 25 <= val <= 200:
+        if 25 <= val <= 240:
             return val
 
     return None
+
+
+def score_measurement(measurement: BPValues) -> float:
+    """
+    Computes an objective quality score for an orientation extraction.
+    Rewards complete readings, physiological plausibility (SYS > DIA), and column alignment.
+    """
+    sys_raw = measurement.sys()
+    dia_raw = measurement.dia()
+    pul_raw = measurement.pul()
+
+    sys_val = validate_bp_value(sys_raw, "sys")
+    dia_val = validate_bp_value(dia_raw, "dia")
+    pul_val = validate_bp_value(pul_raw, "pul")
+
+    valid_count = sum(1 for v in [sys_val, dia_val, pul_val] if v is not None)
+    if valid_count == 0:
+        return -100.0
+
+    avg_conf = measurement.averageConfidence()
+    score = valid_count * 200.0 + avg_conf * 50.0
+
+    if sys_val is not None:
+        score += 50.0
+    if dia_val is not None:
+        score += 50.0
+    if pul_val is not None:
+        score += 50.0
+
+    if sys_val is not None and dia_val is not None:
+        if sys_val > dia_val:
+            score += 100.0
+        else:
+            score -= 200.0  # Inversion penalty
+
+    # Column alignment bonus: check if rows align vertically within display width
+    if len(measurement.values) >= 2:
+        xs = []
+        for v in measurement.values[:3]:
+            b10 = v.get10Box()
+            if b10:
+                xs.append((b10.x1 + b10.x2) / 2)
+            elif v.digits:
+                non_10 = [d for d in v.digits if d.className() != "10"]
+                if non_10:
+                    xs.append(float(np.mean([(d.x1 + d.x2)/2 for d in non_10])))
+        if xs and (max(xs) - min(xs)) < 250:
+            score += 50.0
+
+    return score
 
 
 # ============================================================================
@@ -386,65 +456,28 @@ class SmartBPInferenceEngine:
         logger.info(f"Successfully loaded {self.variant} in {load_time:.1f}ms. Classes: {self.model.names}")
         _MODEL_CACHE[self.weights_path] = self.model
 
-    def predict(
+    def _run_single_inference(
         self,
-        image_input: Union[str, np.ndarray, Image.Image, bytes],
-        conf_threshold: float = 0.2,
-        generate_annotated_image: bool = True
-    ) -> Dict[str, Any]:
+        img_np: np.ndarray,
+        conf_threshold: float = 0.2
+    ) -> Tuple[BPValues, List[Dict[str, Any]], Any]:
         """
-        Runs SMART-BP inference on an image and returns a structured reading report.
-
-        :param image_input: File path, numpy BGR/RGB array, PIL Image, or raw bytes
-        :param conf_threshold: YOLO detection confidence threshold (official default: 0.2)
-        :param generate_annotated_image: Whether to generate an annotated JPEG (base64)
-        :return: Structured result dictionary
+        Executes YOLO prediction and extracts structured BP measurement for a single orientation.
         """
-        t_start = time.time()
-
-        # Step 1: Decode image input
-        img_np, source_desc, err_res = self._preprocess_input(image_input)
-        if err_res is not None:
-            return err_res
-
-        # Step 2: Run official YOLOv8 object detection
         try:
             results = self.model.predict(source=img_np, conf=conf_threshold, verbose=False)
         except Exception as e:
-            logger.exception("Inference prediction error")
-            return {
-                "status": "error",
-                "model_variant": self.variant,
-                "readings": {"sys": None, "dia": None, "pul": None},
-                "confidence": {"average": 0.0, "lowest": 0.0, "highest": 0.0},
-                "message": f"Inference execution failed: {str(e)}",
-                "inference_time_ms": round((time.time() - t_start) * 1000, 2)
-            }
+            logger.exception("Single inference execution error")
+            return BPValues(), [], None
 
         if not results or len(results) == 0:
-            return {
-                "status": "unreadable",
-                "model_variant": self.variant,
-                "readings": {"sys": None, "dia": None, "pul": None},
-                "confidence": {"average": 0.0, "lowest": 0.0, "highest": 0.0},
-                "message": "No blood pressure display detected in image.",
-                "inference_time_ms": round((time.time() - t_start) * 1000, 2)
-            }
+            return BPValues(), [], None
 
         res = results[0]
         boxes_data = res.boxes
-
         if len(boxes_data.xyxy) == 0:
-            return {
-                "status": "unreadable",
-                "model_variant": self.variant,
-                "readings": {"sys": None, "dia": None, "pul": None},
-                "confidence": {"average": 0.0, "lowest": 0.0, "highest": 0.0},
-                "message": "No digits or measurement containers identified.",
-                "inference_time_ms": round((time.time() - t_start) * 1000, 2)
-            }
+            return BPValues(), [], res
 
-        # Step 3: Group digits into value boxes using official SMART-BP logic
         measurement = BPValues()
         digitBoxes = BoxCollection()
         valueBoxes = BoxCollection()
@@ -471,25 +504,26 @@ class SmartBPInferenceEngine:
 
         # Match digits inside each '10' container
         for vbox in valueBoxes.digits:
-            foundCount = 0
             value = BoxCollection()
             value.digits.append(vbox)
             for dbox in digitBoxes.digits:
                 if dbox.isInside(vbox):
                     value.digits.append(dbox)
-                    foundCount += 1
-                if foundCount == 3:
-                    break  # Blood pressure value has at most 3 digits
+            # Deduplicate multiple overlapping detections of the same physical digit
+            value.deduplicateDigits(iou_thresh=0.35)
             value.sortDigit()
-            # Only accept containers with at least 2 non-10 digits
-            if sum(d.className() != "10" for d in value.digits) >= 2:
-                measurement.values.append(value)
+            # Valid BP value has 2 or 3 non-10 digits (filters 4-digit clocks and 1-digit noise)
+            non_10_count = sum(d.className() != "10" for d in value.digits)
+            if 2 <= non_10_count <= 3:
+                decoded = value.getValue()
+                if decoded is not None and 25 <= decoded <= 260:
+                    measurement.values.append(value)
 
         # Disambiguate overlapping row detections
-        measurement.values = keep_best_group_per_row(measurement.values, y_tol=35.0)
+        measurement.values = keep_best_group_per_row(measurement.values, y_tol=40.0)
         measurement.identifyValueType()
 
-        # Step 4: Post-processing corrections
+        # Try fix group if needed
         changed = False
         if len(measurement.values) >= 1:
             changed |= _try_fix_group(measurement.values[0], "sys")
@@ -497,22 +531,92 @@ class SmartBPInferenceEngine:
             changed |= _try_fix_group(measurement.values[1], "dia")
         if len(measurement.values) >= 3:
             changed |= _try_fix_group(measurement.values[2], "pul")
-
         if changed:
             measurement.identifyValueType()
 
-        # Step 5: Validate and finalize readings
-        sys_raw = measurement.sys()
-        dia_raw = measurement.dia()
-        pul_raw = measurement.pul()
+        return measurement, raw_detections, res
+
+    def predict(
+        self,
+        image_input: Union[str, np.ndarray, Image.Image, bytes],
+        conf_threshold: float = 0.2,
+        generate_annotated_image: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Runs SMART-BP inference on an image and returns a structured reading report.
+        Automatically evaluates candidate orientations (0, 90, 180, 270 degrees)
+        for landscape or ambiguous monitor displays using physiological scoring.
+
+        :param image_input: File path, numpy BGR/RGB array, PIL Image, or raw bytes
+        :param conf_threshold: YOLO detection confidence threshold (official default: 0.2)
+        :param generate_annotated_image: Whether to generate an annotated JPEG (base64)
+        :return: Structured result dictionary
+        """
+        t_start = time.time()
+
+        # Step 1: Decode image input
+        img_np, source_desc, err_res = self._preprocess_input(image_input)
+        if err_res is not None:
+            return err_res
+
+        # Step 2: Multi-Orientation Evaluation Loop
+        h, w = img_np.shape[:2]
+        is_landscape = (w > h)
+
+        # Candidate 0: Unrotated original
+        meas_0, raw_dets_0, res_0 = self._run_single_inference(img_np, conf_threshold)
+        score_0 = score_measurement(meas_0)
+
+        s0 = validate_bp_value(meas_0.sys(), "sys")
+        d0 = validate_bp_value(meas_0.dia(), "dia")
+        p0 = validate_bp_value(meas_0.pul(), "pul")
+        n0 = sum(1 for v in [s0, d0, p0] if v is not None)
+
+        best_meas = meas_0
+        best_raw_dets = raw_dets_0
+        best_res = res_0
+        best_rot = 0
+        best_score = score_0
+        best_img = img_np
+
+        # Fast path: For portrait photos with 3 valid tiers and SYS > DIA with high score, rot=0 is optimal
+        skip_rotations = (not is_landscape) and (n0 == 3) and (s0 is not None and d0 is not None and s0 > d0) and (score_0 >= 500.0)
+
+        if not skip_rotations:
+            rotations_to_try = [270, 90] if is_landscape else [90, 180, 270]
+            for rot in rotations_to_try:
+                if rot == 90:
+                    rimg = cv2.rotate(img_np, cv2.ROTATE_90_CLOCKWISE)
+                elif rot == 180:
+                    rimg = cv2.rotate(img_np, cv2.ROTATE_180)
+                elif rot == 270:
+                    rimg = cv2.rotate(img_np, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                else:
+                    continue
+
+                meas_r, raw_dets_r, res_r = self._run_single_inference(rimg, conf_threshold)
+                score_r = score_measurement(meas_r)
+
+                if score_r > best_score:
+                    best_score = score_r
+                    best_meas = meas_r
+                    best_raw_dets = raw_dets_r
+                    best_res = res_r
+                    best_rot = rot
+                    best_img = rimg
+
+        # Step 3: Validate and finalize readings
+        sys_raw = best_meas.sys()
+        dia_raw = best_meas.dia()
+        pul_raw = best_meas.pul()
 
         sys_val = validate_bp_value(sys_raw, "sys")
         dia_val = validate_bp_value(dia_raw, "dia")
         pul_val = validate_bp_value(pul_raw, "pul")
 
-        avg_conf = round(measurement.averageConfidence(), 4)
-        min_conf = round(measurement.lowestConfidence(), 4)
-        max_conf = round(measurement.highestConfidence(), 4)
+        avg_conf = round(best_meas.averageConfidence(), 4)
+        min_conf = round(best_meas.lowestConfidence(), 4)
+        max_conf = round(best_meas.highestConfidence(), 4)
 
         # Determine overall status
         detected_count = sum(1 for v in [sys_val, dia_val, pul_val] if v is not None)
@@ -526,19 +630,20 @@ class SmartBPInferenceEngine:
             status = "unreadable"
             msg = "Digital readout could not be reliably transcribed into plausible BP values."
 
-        # Step 6: Generate annotated preview if requested
+        # Step 4: Generate annotated preview if requested
         annotated_b64 = None
-        if generate_annotated_image:
+        if generate_annotated_image and best_res is not None:
             try:
                 import base64
-                plot_img = res.plot()  # BGR numpy array with drawn boxes
+                plot_img = best_res.plot()
                 _, buffer = cv2.imencode(".jpg", plot_img, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
                 annotated_b64 = base64.b64encode(buffer).decode("utf-8")
             except Exception as e:
                 logger.warning(f"Could not encode annotated preview: {e}")
 
         total_time_ms = round((time.time() - t_start) * 1000, 2)
-        logger.info(f"[{status.upper()}] {msg} (conf={avg_conf:.2f}, time={total_time_ms}ms)")
+        rot_desc = f", rot={best_rot}°" if best_rot != 0 else ""
+        logger.info(f"[{status.upper()}] {msg} (conf={avg_conf:.2f}{rot_desc}, time={total_time_ms}ms)")
 
         return {
             "status": status,
@@ -555,7 +660,8 @@ class SmartBPInferenceEngine:
                 "highest": max_conf
             },
             "detected_values_count": detected_count,
-            "detections": raw_detections,
+            "applied_rotation": best_rot,
+            "detections": best_raw_dets,
             "annotated_image": annotated_b64,
             "message": msg,
             "inference_time_ms": total_time_ms

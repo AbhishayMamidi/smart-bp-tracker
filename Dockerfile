@@ -45,14 +45,19 @@ RUN python -c "import cv2; print('OpenCV Version:', cv2.__version__); print(cv2.
 COPY api_server.py .
 COPY smart_bp_inference.py .
 COPY database.py .
+COPY exif_utils.py .
+COPY storage.py .
+COPY dataset_manager.py .
 COPY cli_infer.py .
 COPY static/ ./static/
 COPY test_images/ ./test_images/
 COPY 21269694/ ./21269694/
 
-# Build-time verification Step 2: Test importing smart_bp_inference and api_server,
-# verifying all shared libraries (PyTorch, Ultralytics, OpenCV, FastAPI) are present
-RUN python -c "import cv2; import smart_bp_inference; import api_server; print('Build verification successful: smart_bp_inference and api_server imported with zero missing shared libraries.')"
+# Build-time verification Step 2: Test importing all application modules —
+# smart_bp_inference, api_server (which imports exif_utils, database, storage, etc.),
+# exif_utils, storage, and dataset_manager directly. This catches any missing COPY or missing dependency
+# before the image is pushed to the registry.
+RUN python -c "import cv2; import exif_utils; import storage; import dataset_manager; import smart_bp_inference; import api_server; print('Build verification successful: all modules imported with zero missing shared libraries.')"
 
 # Prepare storage directory for SQLite persistence
 RUN mkdir -p /var/data && chmod 777 /var/data

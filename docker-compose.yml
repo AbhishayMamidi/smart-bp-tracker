@@ -1,0 +1,73 @@
+# =============================================================================
+# docker-compose.yml — SMART-BP Blood Pressure Tracker
+# Local development deployment with persistent data volume.
+#
+# Usage:
+#   docker compose up --build          # First run (builds image)
+#   docker compose up                  # Subsequent runs
+#   docker compose down                # Stop and remove containers
+#   docker compose down -v             # Stop and delete persistent volume too
+#
+# Access:
+#   http://localhost:8000/             # Web dashboard
+#   http://<your-wifi-ip>:8000/        # Android phone on same network
+#
+# Security:
+#   Set APP_ACCESS_TOKEN below (or in a .env file) before first run.
+#   Never commit your .env file. It is gitignored and dockerignored.
+# =============================================================================
+
+services:
+  smart-bp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: smart-bp-tracker:local
+    container_name: smart-bp-tracker
+
+    # Bind to all interfaces so Android phones on the same Wi-Fi can connect
+    ports:
+      - "8000:8000"
+
+    environment:
+      # Override port for local use (Dockerfile default is 10000 for Render)
+      - PORT=8000
+      - HOST=0.0.0.0
+
+      # Persistent data directory inside container (backed by named volume below)
+      - DATABASE_PATH=/var/data/bp_tracker.db
+      - UPLOADS_DIR=/var/data/uploads
+      - BACKUPS_DIR=/var/data/backups
+
+      # -----------------------------------------------------------------------
+      # ACCESS TOKEN — set your passkey here OR in a .env file
+      # Leave blank to use an auto-generated session token (printed at startup).
+      # Example: APP_ACCESS_TOKEN=my-secret-passkey-here
+      # -----------------------------------------------------------------------
+      - APP_ACCESS_TOKEN=${APP_ACCESS_TOKEN:-}
+
+      # Optional: user scoping for multi-record history
+      - BP_USER_ID=${BP_USER_ID:-personal_owner}
+
+      # Upload size limit in MB (default 20)
+      - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-20}
+
+    # Named volume: persists SQLite DB, uploaded photos, and backups across restarts
+    volumes:
+      - bp_data:/var/data
+
+    # Health check — uses the same endpoint as the Dockerfile HEALTHCHECK
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+    # Restart policy for unattended local use
+    restart: unless-stopped
+
+# Named volume — data persists even after `docker compose down`
+volumes:
+  bp_data:
+    driver: local

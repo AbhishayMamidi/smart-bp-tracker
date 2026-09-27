@@ -1,33 +1,89 @@
+# =============================================================================
+# .dockerignore — SMART-BP Blood Pressure Tracker
+# Excludes: secrets, databases, private health data, dev artifacts, venvs.
+# =============================================================================
+
 # Virtual environments
 .venv/
 env/
 venv/
 
-# Git
+# Git internals
 .git/
 .gitignore
 
-# Bytecode & Caches
+# Python bytecode & caches
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyd
 .pytest_cache/
 
-# Databases & Private Logs
-*.db
-*.sqlite
-*.sqlite3
-bp_tracker.db
-*.log
-
-# Secrets & Environment configs
+# Secrets & Environment configs (NEVER in Docker image)
 .env
 .env.*
 *.pem
 *.key
 
-# Temporary artifacts & Large Paper PDF (saves 35MB in container)
-21269694/**/Paper/
-*.zip
+# Private health data — NEVER in Docker image
+BP_Dr_Morpen/
+ground_truth_labels*
+BP_Dr_Morpen_inventory.*
+baseline_evaluation_report.json
+final_evaluation_report.json
+baseline_predictions_33.json
+
+# SQLite databases & user-uploaded photos
+*.db
+*.sqlite
+*.sqlite3
+bp_tracker.db
+data/
+uploads/
+backups/
+*.bak
+
+# Log files
+*.log
+
+# Temporary test artifacts
 test_images/annotated_result.jpg
 test_images/result.jpg
+
+# Large paper PDF (saves ~35 MB in container)
+21269694/**/Paper/
+
+# Zip archives
+*.zip
+
+# Windows / macOS artifacts
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Dev-only scripts not needed in container
+analyze_dataset_characteristics.py
+backup_db.py
+evaluate_baseline_33.py
+init_ground_truth.py
+inspect_failures.py
+inspect_image_14.py
+inspect_macro.py
+inspect_macro_deep.py
+inventory_dataset.py
+phase1_verify_labels.py
+phase2_evaluate_baseline.py
+review_labels_cli.py
+run_regression_eval.py
+setup_firewall.ps1
+start_local.ps1
+test_dedup.py
+test_live_studio_api.py
+test_macro_exact.py
+test_orientation_fix.py
+test_overlap_threshold.py
+test_pipeline_refinement.py
+reports/
